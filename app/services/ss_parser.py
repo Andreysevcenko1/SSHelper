@@ -1,9 +1,12 @@
 from dataclasses import dataclass
+import logging
 import re
 from urllib.parse import urljoin
 
 import aiohttp
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -104,3 +107,97 @@ class SSParser:
             if match:
                 return match.group(1)
         return None
+
+    async def discover_available_filters(self, search_url: str) -> dict:
+        """
+        Fetch *search_url*, parse all HTML form fields and return a schema dict.
+
+        Each key is the field ``name`` attribute; the value is a dict with:
+        - ``label``   – human-readable label (best-effort)
+        - ``type``    – "select" | "text" | "checkbox" | "radio" | "range" | "hidden" | …
+        - ``options`` – list of ``{value, text, selected}`` for select/radio fields
+        - ``current_value`` – currently selected / default value
+        """
+        timeout = aiohttp.ClientTimeout(total=20)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(search_url, headers={"User-Agent": "Mozilla/5.0"}) as response:
+                response.raise_for_status()
+                html = await response.text()
+
+        schema = _parse_filter_schema(html)
+        logger.info("discover_available_filters: found %d fields for %s", len(schema), search_url)
+        return schema
+
+
+def _find_label(soup: BeautifulSoup, field: Tag) -> str:
+    """Try to find the human-readable label for a form field."""
+    field_id = field.get("id", "")
+    if field_id:
+        label_tag = soup.find("label", {"for": field_id})
+        if label_tag:
+            return label_tag.get_text(strip=True)
+    parent = field.parent
+    if parent:
+        label_tag = parent.find("label")
+        if label_tag:
+            return label_tag.get_text(strip=True)
+    return field.get("name", "")
+
+
+def _parse_filter_schema(html: str) -> dict:
+    """Parse all form fields in *html* and return a schema dict."""
+    soup = BeautifulSoup(html, "html.parser")
+    schema: dict[str, dict] = {}
+
+    for form in soup.find_all("form"):
+        for field in form.find_all(["input", "select", "textarea"]):
+            name = (field.get("name") or "").strip()
+            if not name:
+                continue
+
+            tag_name: str = field.name  # type: ignore[assignment]
+            if tag_name == "input":
+                field_type = (field.get("type") or "text").lower()
+            elif tag_name == "select":
+                field_type = "select"
+            else:
+                field_type = "textarea"
+
+            entry: dict = {
+                "name": name,
+                "label": _find_label(soup, field),
+                "type": field_type,
+                "current_value": field.get("value", ""),
+                "options": [],
+            }
+
+            if field_type == "select":
+                options = []
+                for opt in field.find_all("option"):
+                    opt_value = opt.get("value", "")
+                    is_selected = opt.has_attr("selected")
+                    options.append({
+                        "value": opt_value,
+                        "text": opt.get_text(strip=True),
+                        "selected": is_selected,
+                    })
+                entry["options"] = options
+                selected_opts = [o for o in options if o["selected"]]
+                entry["current_value"] = selected_opts[0]["value"] if selected_opts else ""
+
+            elif field_type == "checkbox":
+                entry["current_value"] = field.has_attr("checked")
+
+            elif field_type == "radio":
+                entry["options"] = [{"value": field.get("value", ""), "checked": field.has_attr("checked")}]
+                entry["current_value"] = field.get("value", "") if field.has_attr("checked") else ""
+
+            # If the field name already seen, merge radio options
+            if name in schema and field_type == "radio":
+                schema[name]["options"].extend(entry["options"])
+                if field.has_attr("checked"):
+                    schema[name]["current_value"] = entry["current_value"]
+            else:
+                schema[name] = entry
+
+    return schema

@@ -23,7 +23,8 @@ class WatcherService:
 
             for search in searches:
                 try:
-                    listings = await self.parser.fetch_listings(search.url, limit=5)
+                    fetch_url = search.effective_url or search.url
+                    listings = await self.parser.fetch_listings(fetch_url, limit=5)
                     await self._process_listings(repo=repo, search=search, listings=listings)
                 except Exception as exc:
                     logger.warning("Watcher: failed to process search #%d — %s", search.id, exc)

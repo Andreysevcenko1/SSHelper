@@ -8,8 +8,23 @@ class SearchRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def add_search(self, user_id: int, url: str, title: str = "SS.lv search") -> Search:
-        search = Search(user_id=user_id, url=url, title=title)
+    def add_search(
+        self,
+        user_id: int,
+        url: str,
+        title: str = "SS.lv search",
+        base_url: str | None = None,
+        filters_json: str | None = None,
+        effective_url: str | None = None,
+    ) -> Search:
+        search = Search(
+            user_id=user_id,
+            url=url,
+            title=title,
+            base_url=base_url,
+            filters_json=filters_json,
+            effective_url=effective_url,
+        )
         self.session.add(search)
         self.session.commit()
         self.session.refresh(search)
