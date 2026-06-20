@@ -6,6 +6,7 @@ from app.bot.callbacks import (
     FilterDelCB,
     FilterEditCB,
     FilterOptCB,
+    LangCB,
     MenuCB,
     PageCB,
     SearchCB,
@@ -29,9 +30,22 @@ def test_menu_cb_pack_unpack():
 
 
 def test_menu_cb_all_actions():
-    for action in ("main", "searches", "add_start"):
+    for action in ("main", "searches", "add_start", "lang"):
         cb = MenuCB(action=action)
         assert MenuCB.unpack(cb.pack()).action == action
+
+
+# ------------------------------------------------------------------ #
+# LangCB                                                               #
+# ------------------------------------------------------------------ #
+
+
+def test_lang_cb_pack_unpack():
+    for lang in ("lv", "ru", "en"):
+        cb = LangCB(lang=lang)
+        restored = LangCB.unpack(cb.pack())
+        assert restored.lang == lang
+        assert _packed_len(cb) < 64
 
 
 # ------------------------------------------------------------------ #

@@ -9,11 +9,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.bot.handlers.common import get_user_lang
 from app.bot.keyboards.filters import cancel_kb
 from app.bot.keyboards.searches import after_add_kb, CATEGORY_LABELS
 from app.bot.states import AddSearchFSM
 from app.bot.utils import try_delete_message
 from app.db.repo import SearchRepository
+from app.i18n import get_text
 from app.services.filters import (
     base_url_without_query,
     build_effective_url,
@@ -28,15 +30,15 @@ router = Router()
 
 
 def _validate_ss_url(url: str) -> str | None:
-    """Return None if valid, or a human-readable error string."""
+    """Return None if valid, or a human-readable error string (language-agnostic)."""
     url = url.strip()
     if not url:
-        return "URL не может быть пустым."
+        return "empty"
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
-        return "URL должен начинаться с http:// или https://"
+        return "bad_scheme"
     if not parsed.netloc or "ss.lv" not in parsed.netloc:
-        return "URL должен быть с домена ss.lv (например: https://www.ss.lv/lv/transport/cars/)"
+        return "bad_domain"
     return None
 
 
@@ -75,23 +77,23 @@ async def cmd_add(
     state: FSMContext,
 ) -> None:
     await try_delete_message(message)
+    user_id = message.from_user.id if message.from_user else None
+    tg_lang = message.from_user.language_code if message.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
 
     command_parts = (message.text or "").split(maxsplit=1)
     if len(command_parts) < 2:
         # No URL provided – start FSM
         prompt = await message.answer(
-            "➕ <b>Добавить поиск</b>\n\n"
-            "Отправьте ссылку на страницу поиска SS.lv.\n\n"
-            "<i>Пример:</i>\n"
-            "<code>https://www.ss.lv/lv/transport/cars/</code>",
-            reply_markup=cancel_kb(),
+            get_text("add_search_prompt", lang),
+            reply_markup=cancel_kb(lang=lang),
         )
         await state.set_state(AddSearchFSM.waiting_url)
         await state.update_data(prompt_msg_id=prompt.message_id)
         return
 
     url = command_parts[1].strip()
-    await _process_add_url(message=message, url=url, session_factory=session_factory)
+    await _process_add_url(message=message, url=url, session_factory=session_factory, lang=lang)
 
 
 # ------------------------------------------------------------------ #
@@ -108,30 +110,35 @@ async def fsm_add_url(
     url = (message.text or "").strip()
     await try_delete_message(message)
 
+    user_id = message.from_user.id if message.from_user else None
+    tg_lang = message.from_user.language_code if message.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
+
     data = await state.get_data()
     prompt_msg_id: int | None = data.get("prompt_msg_id")
 
-    error = _validate_ss_url(url)
-    if error:
+    error_code = _validate_ss_url(url)
+    if error_code:
+        error_msg = get_text("err_invalid_url", lang)
         # Edit the prompt to show the error and keep the cancel button
         if prompt_msg_id and message.bot:
             try:
                 await message.bot.edit_message_text(
                     chat_id=message.chat.id,
                     message_id=prompt_msg_id,
-                    text=(
-                        f"❌ <b>Неверная ссылка</b>\n\n{error}\n\n"
-                        "Попробуйте ещё раз — отправьте корректную ссылку на SS.lv:"
-                    ),
-                    reply_markup=cancel_kb(),
+                    text=f"{error_msg}\n\n{get_text('add_search_prompt', lang)}",
+                    reply_markup=cancel_kb(lang=lang),
                 )
             except TelegramBadRequest:
                 await message.answer(
-                    f"❌ {error}\n\nПопробуйте ещё раз:",
-                    reply_markup=cancel_kb(),
+                    f"{error_msg}\n\n{get_text('add_search_prompt', lang)}",
+                    reply_markup=cancel_kb(lang=lang),
                 )
         else:
-            await message.answer(f"❌ {error}\n\nПопробуйте ещё раз:", reply_markup=cancel_kb())
+            await message.answer(
+                f"{error_msg}\n\n{get_text('add_search_prompt', lang)}",
+                reply_markup=cancel_kb(lang=lang),
+            )
         return
 
     await state.clear()
@@ -140,6 +147,7 @@ async def fsm_add_url(
         url=url,
         session_factory=session_factory,
         edit_msg_id=prompt_msg_id,
+        lang=lang,
     )
 
 
@@ -153,10 +161,11 @@ async def _process_add_url(
     url: str,
     session_factory: sessionmaker[Session],
     edit_msg_id: int | None = None,
+    lang: str = "lv",
 ) -> None:
-    error = _validate_ss_url(url)
-    if error:
-        await _reply(message, f"❌ {error}", edit_msg_id=edit_msg_id)
+    error_code = _validate_ss_url(url)
+    if error_code:
+        await _reply(message, get_text("err_invalid_url", lang), edit_msg_id=edit_msg_id, lang=lang)
         return
 
     raw_filters = extract_filters_from_url(url)
@@ -175,7 +184,7 @@ async def _process_add_url(
 
     user_id = message.from_user.id if message.from_user else None
     if user_id is None:
-        await _reply(message, "❌ Не удалось определить пользователя.", edit_msg_id=edit_msg_id)
+        await _reply(message, get_text("err_no_user", lang), edit_msg_id=edit_msg_id, lang=lang)
         return
 
     # Check duplicate
@@ -184,10 +193,7 @@ async def _process_add_url(
         repo = SearchRepository(session)
         existing = repo.find_by_base_url(user_id, b_url)
         if existing:
-            text = (
-                f"⚠️ Поиск с этим URL уже существует (#{existing.id}).\n\n"
-                "Вы можете управлять им через список поисков."
-            )
+            text = get_text("err_duplicate_url", lang, sid=existing.id)
             from app.bot.keyboards.searches import error_kb
             if edit_msg_id and message.bot:
                 try:
@@ -195,12 +201,12 @@ async def _process_add_url(
                         chat_id=message.chat.id,
                         message_id=edit_msg_id,
                         text=text,
-                        reply_markup=error_kb(back_search_id=existing.id),
+                        reply_markup=error_kb(back_search_id=existing.id, lang=lang),
                     )
                     return
                 except TelegramBadRequest:
                     pass
-            await message.answer(text, reply_markup=error_kb(back_search_id=existing.id))
+            await message.answer(text, reply_markup=error_kb(back_search_id=existing.id, lang=lang))
             return
 
         category = detect_category(url)
@@ -218,20 +224,18 @@ async def _process_add_url(
 
     category_label = CATEGORY_LABELS.get(category, category)
     lines = [
-        "✅ <b>Поиск добавлен!</b>",
-        f"ID: <b>#{search_id}</b>",
-        f"Категория: {category_label}",
+        f"✅ <b>#{search_id}</b> — {category_label}",
         f"🔗 {eff_url}",
     ]
     if normalized:
         filter_lines = _format_filters(normalized, schema)
-        lines.append("\n🔍 <b>Активные фильтры:</b>")
+        lines.append(get_text("search_detail_active_filters", lang))
         lines.extend(filter_lines)
     else:
-        lines.append("\n(без дополнительных фильтров)")
+        lines.append(get_text("search_detail_no_filters", lang))
 
     text = "\n".join(lines)
-    kb = after_add_kb(search_id)
+    kb = after_add_kb(search_id, lang=lang)
 
     if edit_msg_id and message.bot:
         try:
@@ -252,10 +256,11 @@ async def _reply(
     text: str,
     edit_msg_id: int | None = None,
     reply_markup=None,
+    lang: str = "lv",
 ) -> None:
     from app.bot.keyboards.searches import error_kb
 
-    kb = reply_markup or error_kb()
+    kb = reply_markup or error_kb(lang=lang)
     if edit_msg_id and message.bot:
         try:
             await message.bot.edit_message_text(

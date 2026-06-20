@@ -33,6 +33,35 @@ python -m app.main
 
 При старте бот автоматически регистрирует все команды через `set_my_commands` — они появятся в меню команд вашего Telegram-клиента.
 
+## Интернационализация (i18n)
+
+Бот поддерживает три языка: **Latviešu (lv)**, **Русский (ru)**, **English (en)**.
+
+### Приоритет выбора языка
+
+| Приоритет | Источник | Описание |
+|---|---|---|
+| 1 | БД (`user_settings.selected_language`) | Язык, явно выбранный пользователем |
+| 2 | `from_user.language_code` из Telegram | Язык Telegram-клиента, если поддерживается |
+| 3 | Дефолт: `lv` | Латышский — используется, если language_code не пришёл или не поддерживается |
+
+**Почему дефолт — Latvian (lv)?** SS.lv — это латвийский портал, основная аудитория которого — жители Латвии. Латышский язык является наиболее уместным дефолтом для нераспознанных или новых пользователей.
+
+### Смена языка
+
+- Через кнопку **🌐 Valoda / Language** в главном меню.
+- Через команду `/lang`.
+
+Экран выбора языка: кнопки 🇱🇻 **Latviešu**, 🇷🇺 **Русский**, 🇬🇧 **English**.  
+После смены языка меню немедленно обновляется на выбранном языке.
+
+### Архитектура i18n
+
+- Все тексты, кнопки, ошибки и подсказки вынесены в `app/i18n.py` — словарь `_T` с ключами и переводами на все языки.
+- Функция `get_text(key, lang, **kwargs)` — получить строку для конкретного языка.
+- Функция `resolve_lang(tg_lang_code, db_lang)` — вычислить эффективный язык пользователя.
+- Выбранный язык хранится в таблице `user_settings` (поле `selected_language`).
+
 ## UX через кнопки (основной сценарий)
 
 После `/start` открывается **главное меню** с кнопками. Все действия доступны без ввода команд вручную.
@@ -41,7 +70,7 @@ python -m app.main
 
 ```
 🏠 Главное меню
-  ├── 📋 Мои поиски
+  ├── 📋 Мои поиски / Mani meklējumi / My searches
   │     ├── [поиск #N] → карточка поиска
   │     │     ├── ⏸ Пауза / ▶️ Возобновить
   │     │     ├── 🔍 Фильтры
@@ -52,40 +81,27 @@ python -m app.main
   │     │     │     └── 🗑 Очистить все фильтры
   │     │     └── 🗑 Удалить
   │     └── ➕ Добавить поиск
-  └── ➕ Добавить поиск → ввод URL
+  ├── ➕ Добавить поиск → ввод URL
+  └── 🌐 Valoda / Language → выбор языка
 ```
 
 ### Пример пользовательского флоу
 
 ```
 /start
-  → Главное меню [📋 Мои поиски] [➕ Добавить поиск]
+  → Главное меню [📋 Мои поиски] [➕ Добавить поиск] [🌐 Valoda / Language]
       ↓ нажать «Добавить поиск»
   → Бот просит URL
       ↓ отправить https://www.ss.lv/lv/transport/cars/?pr_min=5000
   → ✅ Поиск добавлен! #3, Транспорт, фильтры: pr_min=5000
       [🔍 Открыть фильтры] [📋 Мои поиски] [➕ Добавить ещё] [🏠 В меню]
-          ↓ нажать «Открыть фильтры»
-  → Меню фильтров поиска #3
-      [📋 Показать фильтры] [✏️ Изменить] [🗑 Очистить] [◀️ К поиску] [🏠 В меню]
-          ↓ нажать «Изменить»
-  → Выбор поля фильтра (пагинированный список)
-          ↓ выбрать поле «Марка»
-  → Если поле select: список кнопок с опциями
-  → Если текстовое: «Введите значение:»
-          ↓ выбрать / ввести значение
-  → ✅ Фильтр установлен
-      [📋 Показать фильтры] [✏️ Изменить ещё] [◀️ К поиску] [🏠 В меню]
+
+/lang или кнопка «🌐 Valoda / Language»
+  → Экран выбора языка
+      [🇱🇻 Latviešu] [🇷🇺 Русский] [🇬🇧 English] [🏠]
+      ↓ выбрать язык
+  → ✅ Язык изменён + главное меню на новом языке
 ```
-
-### После каждого действия — кнопки «что дальше»
-
-| Действие | Кнопки |
-|---|---|
-| Добавить поиск | Открыть фильтры / Мои поиски / Добавить ещё / В меню |
-| Пауза / Возобновить / Удалить | Мои поиски / В меню |
-| Установить / Удалить фильтр | Показать фильтры / Изменить ещё / К поиску / В меню |
-| Ошибка | Назад к поиску / Мои поиски / В меню |
 
 ## Slash-команды (совместимость)
 
@@ -96,6 +112,7 @@ python -m app.main
 | `/start` | Главное меню |
 | `/add <url>` | Добавить поиск (без URL — запустит диалог) |
 | `/list` | Список поисков с кнопками |
+| `/lang` | Выбор языка |
 | `/pause <ID>` | Приостановить поиск |
 | `/resume <ID>` | Возобновить поиск |
 | `/delete <ID>` | Удалить поиск |
@@ -140,23 +157,25 @@ python -m app.main
 
 ```
 app/
+  i18n.py               # Переводы (lv/ru/en), get_text(), resolve_lang()
   bot/
-    callbacks.py          # CallbackData фабрики (MenuCB, SearchCB, FilterCB, …)
+    callbacks.py          # CallbackData фабрики (MenuCB, LangCB, SearchCB, FilterCB, …)
     states.py             # FSM состояния (AddSearchFSM, EditFilterFSM)
     utils.py              # delete_message_safe, try_delete_message
     keyboards/
-      main.py             # Главное меню
+      main.py             # Главное меню, lang_selection_kb()
       searches.py         # Списки поисков, действия, после-действие, ошибки
       filters.py          # Меню фильтров, поля, опции, пагинация
     handlers/
-      common.py           # /start
+      common.py           # /start, get_user_lang()
+      lang.py             # /lang, LangCB (выбор языка)
       add_search.py       # /add + FSM AddSearchFSM
       searches.py         # /list /pause /resume /delete
       filter_cmds.py      # /filters /setfilter /delfilter /clearfilters + колбэки фильтров
       menu.py             # MenuCB и SearchCB колбэки (навигация)
   db/
-    models.py             # SQLAlchemy модели
-    repo.py               # SearchRepository (включая set_filter, delete_filter, clear_filters)
+    models.py             # SQLAlchemy модели (Search, UserSettings)
+    repo.py               # SearchRepository, UserSettingsRepository
   services/
     ss_parser.py          # Парсер SS.lv + discover_available_filters
     filters.py            # URL ↔ filter dict утилиты
@@ -164,7 +183,7 @@ app/
   config.py
   main.py                 # Точка входа + set_my_commands
 tests/
-  test_keyboards.py       # Тесты построения клавиатур
+  test_keyboards.py       # Тесты построения клавиатур (включая lang_selection_kb)
   test_callbacks.py       # Тесты CallbackData pack/unpack + размер ≤ 64 байт
   test_validators.py      # Тесты URL-валидации, фильтров, вспомогательных функций
 ```
@@ -181,6 +200,11 @@ python -m pytest tests/ -v
 - Инициализация бота и БД.
 - Команды `/start`, `/add`, `/list`, `/pause`, `/resume`, `/delete`.
 - Команды `/filters`, `/setfilter`, `/delfilter`, `/clearfilters`.
+- Команда `/lang` и кнопка 🌐 в главном меню для выбора языка.
+- Поддержка трёх языков: Latviešu (lv), Русский (ru), English (en).
+- Приоритет языка: DB > Telegram language_code > дефолт lv.
+- i18n-слой: все тексты через `get_text()`, без хардкода строк в хендлерах.
+- Хранение выбранного языка в таблице `user_settings`.
 - FSM сценарии: AddSearchFlow, EditFilterFlow.
 - InlineKeyboard меню с навигацией «Назад» / «В меню» везде.
 - Пагинация кнопок для полей и опций фильтров.
@@ -190,5 +214,5 @@ python -m pytest tests/ -v
 - Обнаружение схемы фильтров SS.lv (`discover_available_filters`).
 - Периодический watcher с дедупликацией.
 - Регистрация команд меню через `set_my_commands` при старте.
-- 51 unit-тест.
+- 53 unit-теста.
 

@@ -1,30 +1,35 @@
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.bot.keyboards.main import main_menu_kb
 from app.bot.utils import try_delete_message
+from app.db.repo import UserSettingsRepository
+from app.i18n import get_text, resolve_lang
 
 router = Router()
 
-_WELCOME = (
-    "👋 Привет! Я <b>SSHelper</b> — бот для мониторинга объявлений на SS.lv.\n\n"
-    "<b>Доступные команды:</b>\n"
-    "/add &lt;ссылка&gt; — добавить поиск\n"
-    "/list — список ваших поисков\n"
-    "/pause &lt;ID&gt; — приостановить поиск\n"
-    "/resume &lt;ID&gt; — возобновить поиск\n"
-    "/delete &lt;ID&gt; — удалить поиск\n"
-    "/filters &lt;ID&gt; — фильтры поиска\n"
-    "/setfilter &lt;ID&gt; &lt;поле&gt; &lt;значение&gt; — установить фильтр\n"
-    "/delfilter &lt;ID&gt; &lt;поле&gt; — удалить фильтр\n"
-    "/clearfilters &lt;ID&gt; — очистить все фильтры\n\n"
-    "Или используйте кнопки меню ниже:"
-)
+
+def get_user_lang(
+    user_id: int,
+    tg_lang: str | None,
+    session_factory: sessionmaker[Session],
+) -> str:
+    """Resolve the effective language for a user from DB + Telegram fallback."""
+    session = session_factory()
+    try:
+        db_lang = UserSettingsRepository(session).get_lang(user_id)
+    finally:
+        session.close()
+    return resolve_lang(tg_lang, db_lang)
 
 
 @router.message(Command("start"))
-async def cmd_start(message: Message) -> None:
+async def cmd_start(message: Message, session_factory: sessionmaker[Session]) -> None:
     await try_delete_message(message)
-    await message.answer(_WELCOME, reply_markup=main_menu_kb())
+    user_id = message.from_user.id if message.from_user else None
+    tg_lang = message.from_user.language_code if message.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
+    await message.answer(get_text("welcome", lang), reply_markup=main_menu_kb(lang=lang))
 

@@ -15,6 +15,11 @@ _REQUIRED_SEARCH_COLUMNS: dict[str, str] = {
     "effective_url": "TEXT",
 }
 
+# Columns that must exist in the user_settings table (name -> SQLite type)
+_REQUIRED_USER_SETTINGS_COLUMNS: dict[str, str] = {
+    "selected_language": "TEXT",
+}
+
 
 def _migrate_sqlite(engine) -> None:
     """Add any missing columns to existing SQLite tables without data loss."""
@@ -26,6 +31,20 @@ def _migrate_sqlite(engine) -> None:
             if col_name not in existing:
                 logger.info("Migration: adding column '%s' to searches", col_name)
                 conn.execute(text(f"ALTER TABLE searches ADD COLUMN {col_name} {col_type}"))
+
+        # Ensure user_settings table exists with all required columns
+        result = conn.execute(text("PRAGMA table_info(user_settings)"))
+        us_existing = {row[1] for row in result}
+        if not us_existing:
+            # Table was just created by create_all; nothing to migrate.
+            pass
+        else:
+            for col_name, col_type in _REQUIRED_USER_SETTINGS_COLUMNS.items():
+                if col_name not in us_existing:
+                    logger.info("Migration: adding column '%s' to user_settings", col_name)
+                    conn.execute(
+                        text(f"ALTER TABLE user_settings ADD COLUMN {col_name} {col_type}")
+                    )
 
         conn.commit()
 

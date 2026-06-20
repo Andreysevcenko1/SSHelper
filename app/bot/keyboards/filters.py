@@ -10,37 +10,38 @@ from app.bot.callbacks import (
     PageCB,
     SearchCB,
 )
+from app.i18n import get_text
 
 _PAGE_SIZE_FIELDS = 8
 _PAGE_SIZE_OPTS = 8
 
 
-def filters_menu_kb(search_id: int, has_filters: bool) -> InlineKeyboardMarkup:
+def filters_menu_kb(search_id: int, has_filters: bool, lang: str = "lv") -> InlineKeyboardMarkup:
     """Top-level filter menu for a search."""
     b = InlineKeyboardBuilder()
     b.button(
-        text="📋 Показать фильтры",
+        text=get_text("btn_show_filters", lang),
         callback_data=FilterCB(action="show", sid=search_id),
     )
     b.button(
-        text="✏️ Изменить / добавить фильтр",
+        text=get_text("btn_edit_filter", lang),
         callback_data=FilterCB(action="edit_start", sid=search_id),
     )
     if has_filters:
         b.button(
-            text="🗑 Очистить все фильтры",
+            text=get_text("btn_clear_filters", lang),
             callback_data=FilterCB(action="clear", sid=search_id),
         )
     b.button(
-        text="◀️ К поиску",
+        text=get_text("btn_back_to_search", lang),
         callback_data=SearchCB(action="view", sid=search_id),
     )
-    b.button(text="🏠 В меню", callback_data=MenuCB(action="main"))
+    b.button(text=get_text("btn_back_to_menu", lang), callback_data=MenuCB(action="main"))
     b.adjust(1)
     return b.as_markup()
 
 
-def filter_items_kb(search_id: int, filters: dict) -> InlineKeyboardMarkup:
+def filter_items_kb(search_id: int, filters: dict, lang: str = "lv") -> InlineKeyboardMarkup:
     """Shows current active filters, each with a 🗑 delete button."""
     b = InlineKeyboardBuilder()
     for key, value in filters.items():
@@ -54,18 +55,18 @@ def filter_items_kb(search_id: int, filters: dict) -> InlineKeyboardMarkup:
             callback_data=FilterDelCB(sid=search_id, key=safe_key),
         )
     b.button(
-        text="✏️ Изменить / добавить фильтр",
+        text=get_text("btn_edit_filter", lang),
         callback_data=FilterCB(action="edit_start", sid=search_id),
     )
     b.button(
-        text="🗑 Очистить все",
+        text=get_text("btn_clear_filters", lang),
         callback_data=FilterCB(action="clear", sid=search_id),
     )
     b.button(
-        text="◀️ К поиску",
+        text=get_text("btn_back_to_search", lang),
         callback_data=SearchCB(action="view", sid=search_id),
     )
-    b.button(text="🏠 В меню", callback_data=MenuCB(action="main"))
+    b.button(text=get_text("btn_back_to_menu", lang), callback_data=MenuCB(action="main"))
     b.adjust(1)
     return b.as_markup()
 
@@ -74,6 +75,7 @@ def filter_fields_kb(
     search_id: int,
     fields: list[tuple[int, str, str]],  # (global_idx, name, label)
     page: int = 0,
+    lang: str = "lv",
 ) -> InlineKeyboardMarkup:
     """Paginated list of filter schema fields for selection."""
     b = InlineKeyboardBuilder()
@@ -94,20 +96,20 @@ def filter_fields_kb(
     nav = []
     if page > 0:
         nav.append(
-            ("◀️ Пред.", PageCB(ctx="fields", sid=search_id, fidx=-1, pg=page - 1))
+            (get_text("btn_prev_page", lang), PageCB(ctx="fields", sid=search_id, fidx=-1, pg=page - 1))
         )
     if end < len(fields):
         nav.append(
-            ("След. ▶️", PageCB(ctx="fields", sid=search_id, fidx=-1, pg=page + 1))
+            (get_text("btn_next_page", lang), PageCB(ctx="fields", sid=search_id, fidx=-1, pg=page + 1))
         )
     for label, cb in nav:
         b.button(text=label, callback_data=cb)
 
     b.button(
-        text="◀️ К фильтрам",
+        text=get_text("btn_back_to_search", lang),
         callback_data=FilterCB(action="show", sid=search_id),
     )
-    b.button(text="🏠 В меню", callback_data=MenuCB(action="main"))
+    b.button(text=get_text("btn_back_to_menu", lang), callback_data=MenuCB(action="main"))
 
     # Build row sizes: fields 2 per row, nav row, back row
     row_sizes: list[int] = []
@@ -128,6 +130,7 @@ def filter_options_kb(
     fidx: int,
     options: list[dict],
     page: int = 0,
+    lang: str = "lv",
 ) -> InlineKeyboardMarkup:
     """Paginated list of select options for a specific filter field."""
     b = InlineKeyboardBuilder()
@@ -148,20 +151,20 @@ def filter_options_kb(
     nav = []
     if page > 0:
         nav.append(
-            ("◀️ Пред.", PageCB(ctx="opts", sid=search_id, fidx=fidx, pg=page - 1))
+            (get_text("btn_prev_page", lang), PageCB(ctx="opts", sid=search_id, fidx=fidx, pg=page - 1))
         )
     if end < len(options):
         nav.append(
-            ("След. ▶️", PageCB(ctx="opts", sid=search_id, fidx=fidx, pg=page + 1))
+            (get_text("btn_next_page", lang), PageCB(ctx="opts", sid=search_id, fidx=fidx, pg=page + 1))
         )
     for label, cb in nav:
         b.button(text=label, callback_data=cb)
 
     b.button(
-        text="◀️ К полям",
+        text=get_text("btn_back_to_search", lang),
         callback_data=FilterCB(action="edit_start", sid=search_id),
     )
-    b.button(text="🏠 В меню", callback_data=MenuCB(action="main"))
+    b.button(text=get_text("btn_back_to_menu", lang), callback_data=MenuCB(action="main"))
 
     row_sizes: list[int] = []
     n = len(page_opts)
@@ -176,33 +179,33 @@ def filter_options_kb(
     return b.as_markup()
 
 
-def after_filter_kb(search_id: int) -> InlineKeyboardMarkup:
+def after_filter_kb(search_id: int, lang: str = "lv") -> InlineKeyboardMarkup:
     """Shown after setting/deleting/clearing a filter."""
     b = InlineKeyboardBuilder()
     b.button(
-        text="📋 Показать фильтры",
+        text=get_text("btn_show_filters", lang),
         callback_data=FilterCB(action="show", sid=search_id),
     )
     b.button(
-        text="✏️ Изменить ещё",
+        text=get_text("btn_edit_more", lang),
         callback_data=FilterCB(action="edit_start", sid=search_id),
     )
     b.button(
-        text="◀️ К поиску",
+        text=get_text("btn_back_to_search", lang),
         callback_data=SearchCB(action="view", sid=search_id),
     )
-    b.button(text="🏠 В меню", callback_data=MenuCB(action="main"))
+    b.button(text=get_text("btn_back_to_menu", lang), callback_data=MenuCB(action="main"))
     b.adjust(2, 2)
     return b.as_markup()
 
 
-def cancel_kb(search_id: int = 0) -> InlineKeyboardMarkup:
+def cancel_kb(search_id: int = 0, lang: str = "lv") -> InlineKeyboardMarkup:
     """Used during FSM steps to allow cancellation."""
     b = InlineKeyboardBuilder()
-    b.button(text="❌ Отмена", callback_data=MenuCB(action="main"))
+    b.button(text=get_text("btn_cancel", lang), callback_data=MenuCB(action="main"))
     if search_id:
         b.button(
-            text="◀️ К поиску",
+            text=get_text("btn_back_to_search", lang),
             callback_data=SearchCB(action="view", sid=search_id),
         )
     b.adjust(1)

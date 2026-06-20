@@ -1,4 +1,3 @@
-import json
 import logging
 from urllib.parse import urlparse
 
@@ -7,12 +6,14 @@ from aiogram.filters import Command
 from aiogram.types import Message
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.bot.handlers.common import get_user_lang
 from app.bot.keyboards.searches import (
     after_action_kb,
     error_kb,
     searches_list_kb,
 )
 from app.db.repo import SearchRepository
+from app.i18n import get_text
 from app.services.filters import filters_from_json
 from app.bot.utils import try_delete_message
 
@@ -31,8 +32,11 @@ async def cmd_list(message: Message, session_factory: sessionmaker[Session]) -> 
     await try_delete_message(message)
     user_id = _require_user(message)
     if user_id is None:
-        await message.answer("Не удалось определить пользователя.")
+        await message.answer(get_text("err_no_user", "lv"))
         return
+
+    tg_lang = message.from_user.language_code if message.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory)
 
     session = session_factory()
     try:
@@ -43,15 +47,15 @@ async def cmd_list(message: Message, session_factory: sessionmaker[Session]) -> 
 
     if not searches:
         await message.answer(
-            "📋 У вас нет поисков.\n\nДобавьте первый поиск, нажав кнопку ниже.",
-            reply_markup=searches_list_kb([]),
+            get_text("no_searches", lang),
+            reply_markup=searches_list_kb([], lang=lang),
         )
         return
 
-    lines = [f"📋 <b>Ваши поиски</b> ({len(searches)}):\n"]
+    lines = [get_text("list_header", lang, count=len(searches))]
     for s in searches:
         from app.bot.keyboards.searches import CATEGORY_LABELS
-        status = "▶️ активен" if s.is_active else "⏸ на паузе"
+        status = get_text("status_active" if s.is_active else "status_paused", lang)
         category_label = CATEGORY_LABELS.get(s.title, s.title)
         display_url = s.effective_url or s.url
         entry = f"#{s.id} — {category_label} [{status}]\n🔗 {display_url}"
@@ -61,7 +65,7 @@ async def cmd_list(message: Message, session_factory: sessionmaker[Session]) -> 
             entry += f"\n🔍 {filter_str}"
         lines.append(entry)
 
-    await message.answer("\n\n".join(lines), reply_markup=searches_list_kb(searches))
+    await message.answer("\n\n".join(lines), reply_markup=searches_list_kb(searches, lang=lang))
 
 
 @router.message(Command("pause"))
@@ -69,14 +73,17 @@ async def cmd_pause(message: Message, session_factory: sessionmaker[Session]) ->
     await try_delete_message(message)
     user_id = _require_user(message)
     if user_id is None:
-        await message.answer("Не удалось определить пользователя.")
+        await message.answer(get_text("err_no_user", "lv"))
         return
+
+    tg_lang = message.from_user.language_code if message.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory)
 
     search_id = _parse_search_id(message)
     if search_id is None:
         await message.answer(
-            "Использование: /pause <ID поиска>",
-            reply_markup=error_kb(),
+            get_text("err_usage_pause", lang),
+            reply_markup=error_kb(lang=lang),
         )
         return
 
@@ -85,12 +92,12 @@ async def cmd_pause(message: Message, session_factory: sessionmaker[Session]) ->
         repo = SearchRepository(session)
         search = repo.get_by_id(search_id)
         if search is None or search.user_id != user_id:
-            await message.answer("❌ Поиск не найден.", reply_markup=error_kb())
+            await message.answer(get_text("err_search_not_found_short", lang), reply_markup=error_kb(lang=lang))
             return
         if not search.is_active:
             await message.answer(
-                f"Поиск #{search_id} уже на паузе.",
-                reply_markup=error_kb(back_search_id=search_id),
+                get_text("err_search_already_exists_pause", lang, sid=search_id),
+                reply_markup=error_kb(back_search_id=search_id, lang=lang),
             )
             return
         repo.pause_search(search)
@@ -98,8 +105,8 @@ async def cmd_pause(message: Message, session_factory: sessionmaker[Session]) ->
         session.close()
 
     await message.answer(
-        f"⏸ Поиск #{search_id} поставлен на паузу.",
-        reply_markup=after_action_kb(),
+        get_text("search_paused", lang, sid=search_id),
+        reply_markup=after_action_kb(lang=lang),
     )
 
 
@@ -108,14 +115,17 @@ async def cmd_resume(message: Message, session_factory: sessionmaker[Session]) -
     await try_delete_message(message)
     user_id = _require_user(message)
     if user_id is None:
-        await message.answer("Не удалось определить пользователя.")
+        await message.answer(get_text("err_no_user", "lv"))
         return
+
+    tg_lang = message.from_user.language_code if message.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory)
 
     search_id = _parse_search_id(message)
     if search_id is None:
         await message.answer(
-            "Использование: /resume <ID поиска>",
-            reply_markup=error_kb(),
+            get_text("err_usage_resume", lang),
+            reply_markup=error_kb(lang=lang),
         )
         return
 
@@ -124,12 +134,12 @@ async def cmd_resume(message: Message, session_factory: sessionmaker[Session]) -
         repo = SearchRepository(session)
         search = repo.get_by_id(search_id)
         if search is None or search.user_id != user_id:
-            await message.answer("❌ Поиск не найден.", reply_markup=error_kb())
+            await message.answer(get_text("err_search_not_found_short", lang), reply_markup=error_kb(lang=lang))
             return
         if search.is_active:
             await message.answer(
-                f"Поиск #{search_id} уже активен.",
-                reply_markup=error_kb(back_search_id=search_id),
+                get_text("err_search_already_active_resume", lang, sid=search_id),
+                reply_markup=error_kb(back_search_id=search_id, lang=lang),
             )
             return
         repo.resume_search(search)
@@ -137,8 +147,8 @@ async def cmd_resume(message: Message, session_factory: sessionmaker[Session]) -
         session.close()
 
     await message.answer(
-        f"▶️ Поиск #{search_id} возобновлён.",
-        reply_markup=after_action_kb(),
+        get_text("search_resumed", lang, sid=search_id),
+        reply_markup=after_action_kb(lang=lang),
     )
 
 
@@ -147,14 +157,17 @@ async def cmd_delete(message: Message, session_factory: sessionmaker[Session]) -
     await try_delete_message(message)
     user_id = _require_user(message)
     if user_id is None:
-        await message.answer("Не удалось определить пользователя.")
+        await message.answer(get_text("err_no_user", "lv"))
         return
+
+    tg_lang = message.from_user.language_code if message.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory)
 
     search_id = _parse_search_id(message)
     if search_id is None:
         await message.answer(
-            "Использование: /delete <ID поиска>",
-            reply_markup=error_kb(),
+            get_text("err_usage_delete", lang),
+            reply_markup=error_kb(lang=lang),
         )
         return
 
@@ -163,15 +176,15 @@ async def cmd_delete(message: Message, session_factory: sessionmaker[Session]) -
         repo = SearchRepository(session)
         search = repo.get_by_id(search_id)
         if search is None or search.user_id != user_id:
-            await message.answer("❌ Поиск не найден.", reply_markup=error_kb())
+            await message.answer(get_text("err_search_not_found_short", lang), reply_markup=error_kb(lang=lang))
             return
         repo.delete_search(search)
     finally:
         session.close()
 
     await message.answer(
-        f"🗑 Поиск #{search_id} удалён.",
-        reply_markup=after_action_kb(),
+        get_text("search_deleted", lang, sid=search_id),
+        reply_markup=after_action_kb(lang=lang),
     )
 
 
