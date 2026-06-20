@@ -12,9 +12,34 @@ class Listing:
     title: str
     url: str
     price: str | None = None
+    city: str | None = None
 
 
-_ID_RE = re.compile(r"(\\d{5,})")
+_ID_RE = re.compile(r"(\d{5,})")
+
+_CATEGORY_MAP = {
+    "/transport/": "Транспорт",
+    "/real-estate/": "Недвижимость",
+    "/animals/": "Животные",
+    "/electronics/": "Электроника",
+    "/services/": "Услуги",
+    "/other/": "Прочее",
+    "/clothing/": "Одежда",
+    "/garden/": "Сад и огород",
+    "/food/": "Еда",
+    "/sport/": "Спорт",
+    "/business/": "Бизнес",
+    "/collect/": "Коллекционирование",
+    "/household/": "Дом и быт",
+}
+
+
+def detect_category(url: str) -> str:
+    url_lower = url.lower()
+    for segment, label in _CATEGORY_MAP.items():
+        if segment in url_lower:
+            return label
+    return "SS.lv"
 
 
 class SSParser:
@@ -46,11 +71,27 @@ class SSParser:
             price_cell = row.select_one("td.msga2-o.pp6")
             price = price_cell.get_text(" ", strip=True) if price_cell else None
 
+            # City is typically in the second-to-last or a specific td column
+            city: str | None = None
+            city_cell = row.select_one("td.msga2:not(.pp6)")
+            if city_cell:
+                city_text = city_cell.get_text(strip=True)
+                if city_text:
+                    city = city_text
+
             external_id = self._extract_external_id(row.get("id", ""), href)
             if not external_id:
                 continue
 
-            listings.append(Listing(external_id=external_id, title=title, url=full_url, price=price))
+            listings.append(
+                Listing(
+                    external_id=external_id,
+                    title=title,
+                    url=full_url,
+                    price=price,
+                    city=city,
+                )
+            )
             if len(listings) >= limit:
                 break
 
