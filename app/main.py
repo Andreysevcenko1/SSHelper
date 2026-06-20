@@ -14,9 +14,10 @@ from app.services.ss_parser import SSParser
 from app.services.watcher import WatcherService
 
 _BOT_COMMANDS = [
-    BotCommand(command="start", description="Главное меню"),
-    BotCommand(command="add", description="Добавить поиск по ссылке SS.lv"),
-    BotCommand(command="list", description="Список ваших поисков"),
+    BotCommand(command="start", description="Главное меню / Main menu / Galvenā izvēlne"),
+    BotCommand(command="add", description="Добавить поиск / Add search"),
+    BotCommand(command="list", description="Список поисков / List searches"),
+    BotCommand(command="lang", description="Язык / Language / Valoda"),
     BotCommand(command="pause", description="Приостановить поиск: /pause <ID>"),
     BotCommand(command="resume", description="Возобновить поиск: /resume <ID>"),
     BotCommand(command="delete", description="Удалить поиск: /delete <ID>"),

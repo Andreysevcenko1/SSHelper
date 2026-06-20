@@ -6,6 +6,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 
+class UserSettings(Base):
+    __tablename__ = "user_settings"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    selected_language: Mapped[str | None] = mapped_column(String(8), nullable=True)
+
+
 class Search(Base):
     __tablename__ = "searches"
 

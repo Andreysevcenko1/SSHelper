@@ -3,13 +3,33 @@ import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Search
+from app.db.models import Search, UserSettings
 from app.services.filters import (
     build_effective_url,
     filters_from_json,
     filters_to_json,
     normalize_filters,
 )
+
+
+class UserSettingsRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get_lang(self, user_id: int) -> str | None:
+        """Return the stored language code for *user_id*, or None."""
+        row = self.session.get(UserSettings, user_id)
+        return row.selected_language if row else None
+
+    def set_lang(self, user_id: int, lang: str) -> None:
+        """Persist the selected language for *user_id*."""
+        row = self.session.get(UserSettings, user_id)
+        if row is None:
+            row = UserSettings(user_id=user_id, selected_language=lang)
+            self.session.add(row)
+        else:
+            row.selected_language = lang
+        self.session.commit()
 
 
 class SearchRepository:

@@ -1,5 +1,4 @@
 """Callback handlers for main navigation: MenuCB and SearchCB."""
-import json
 import logging
 
 from aiogram import F, Router
@@ -9,6 +8,7 @@ from aiogram.types import CallbackQuery
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.bot.callbacks import MenuCB, SearchCB
+from app.bot.handlers.common import get_user_lang
 from app.bot.keyboards.main import main_menu_kb
 from app.bot.keyboards.searches import (
     CATEGORY_LABELS,
@@ -20,19 +20,16 @@ from app.bot.keyboards.searches import (
 from app.bot.keyboards.filters import filters_menu_kb
 from app.bot.states import AddSearchFSM
 from app.db.repo import SearchRepository
+from app.i18n import get_text
 from app.services.filters import filters_from_json
 
 logger = logging.getLogger(__name__)
 router = Router()
 
+
 # ------------------------------------------------------------------ #
 # Helpers                                                              #
 # ------------------------------------------------------------------ #
-
-WELCOME_TEXT = (
-    "👋 <b>SSHelper</b> — мониторинг объявлений SS.lv\n\n"
-    "Выберите действие:"
-)
 
 
 async def _safe_edit(callback: CallbackQuery, text: str, reply_markup=None) -> None:
@@ -44,22 +41,22 @@ async def _safe_edit(callback: CallbackQuery, text: str, reply_markup=None) -> N
             raise
 
 
-def _format_search_details(search, filters: dict, schema: dict | None = None) -> str:
+def _format_search_details(search, filters: dict, lang: str) -> str:
     category_label = CATEGORY_LABELS.get(search.title, search.title)
-    status = "▶️ активен" if search.is_active else "⏸ на паузе"
+    status = get_text("status_active" if search.is_active else "status_paused", lang)
     display_url = search.effective_url or search.url
     lines = [
-        f"🔎 <b>Поиск #{search.id}</b>",
-        f"Категория: {category_label}",
-        f"Статус: {status}",
+        get_text("search_detail_header", lang, sid=search.id),
+        get_text("search_detail_category", lang, cat=category_label),
+        get_text("search_detail_status", lang, status=status),
         f"🔗 {display_url}",
     ]
     if filters:
-        lines.append("\n🔍 <b>Активные фильтры:</b>")
+        lines.append(get_text("search_detail_active_filters", lang))
         for k, v in filters.items():
             lines.append(f"  • {k}: {v}")
     else:
-        lines.append("\n(без дополнительных фильтров)")
+        lines.append(get_text("search_detail_no_filters", lang))
     return "\n".join(lines)
 
 
@@ -69,9 +66,20 @@ def _format_search_details(search, filters: dict, schema: dict | None = None) ->
 
 
 @router.callback_query(MenuCB.filter(F.action == "main"))
-async def cb_menu_main(callback: CallbackQuery, state: FSMContext) -> None:
+async def cb_menu_main(
+    callback: CallbackQuery,
+    session_factory: sessionmaker[Session],
+    state: FSMContext,
+) -> None:
     await state.clear()
-    await _safe_edit(callback, WELCOME_TEXT, reply_markup=main_menu_kb())
+    user_id = callback.from_user.id if callback.from_user else None
+    tg_lang = callback.from_user.language_code if callback.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
+    await _safe_edit(
+        callback,
+        get_text("menu_welcome", lang),
+        reply_markup=main_menu_kb(lang=lang),
+    )
     await callback.answer()
 
 
@@ -85,8 +93,11 @@ async def cb_menu_searches(
     await state.clear()
     user_id = callback.from_user.id if callback.from_user else None
     if user_id is None:
-        await callback.answer("Не удалось определить пользователя.", show_alert=True)
+        await callback.answer(get_text("err_no_user", "lv"), show_alert=True)
         return
+
+    tg_lang = callback.from_user.language_code if callback.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory)
 
     session = session_factory()
     try:
@@ -96,11 +107,11 @@ async def cb_menu_searches(
         session.close()
 
     if not searches:
-        text = "📋 У вас нет поисков.\n\nДобавьте первый поиск, нажав кнопку ниже."
-        kb = searches_list_kb([])
+        text = get_text("no_searches", lang)
+        kb = searches_list_kb([], lang=lang)
     else:
-        text = f"📋 <b>Ваши поиски</b> ({len(searches)}):\n\nВыберите поиск для просмотра или управления:"
-        kb = searches_list_kb(searches)
+        text = get_text("searches_list_header", lang, count=len(searches))
+        kb = searches_list_kb(searches, lang=lang)
 
     await _safe_edit(callback, text, reply_markup=kb)
     await callback.answer()
@@ -109,6 +120,7 @@ async def cb_menu_searches(
 @router.callback_query(MenuCB.filter(F.action == "add_start"))
 async def cb_menu_add_start(
     callback: CallbackQuery,
+    session_factory: sessionmaker[Session],
     state: FSMContext,
 ) -> None:
     from app.bot.keyboards.filters import cancel_kb
@@ -117,13 +129,14 @@ async def cb_menu_add_start(
     await state.set_state(AddSearchFSM.waiting_url)
     await state.update_data(prompt_msg_id=callback.message.message_id)
 
+    user_id = callback.from_user.id if callback.from_user else None
+    tg_lang = callback.from_user.language_code if callback.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
+
     await _safe_edit(
         callback,
-        "➕ <b>Добавить поиск</b>\n\n"
-        "Отправьте ссылку на страницу поиска SS.lv.\n\n"
-        "<i>Пример:</i>\n"
-        "<code>https://www.ss.lv/lv/transport/cars/</code>",
-        reply_markup=cancel_kb(),
+        get_text("add_search_prompt", lang),
+        reply_markup=cancel_kb(lang=lang),
     )
     await callback.answer()
 
@@ -141,8 +154,11 @@ async def cb_search_view(
 ) -> None:
     user_id = callback.from_user.id if callback.from_user else None
     if user_id is None:
-        await callback.answer("Нет пользователя.", show_alert=True)
+        await callback.answer(get_text("err_no_user", "lv"), show_alert=True)
         return
+
+    tg_lang = callback.from_user.language_code if callback.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory)
 
     session = session_factory()
     try:
@@ -151,14 +167,14 @@ async def cb_search_view(
         if search is None or search.user_id != user_id:
             await _safe_edit(
                 callback,
-                "❌ Поиск не найден или не принадлежит вам.",
-                reply_markup=error_kb(),
+                get_text("err_search_not_found", lang),
+                reply_markup=error_kb(lang=lang),
             )
             await callback.answer()
             return
         filters = filters_from_json(search.filters_json)
-        text = _format_search_details(search, filters)
-        kb = search_actions_kb(search.id, search.is_active)
+        text = _format_search_details(search, filters, lang)
+        kb = search_actions_kb(search.id, search.is_active, lang=lang)
     finally:
         session.close()
 
@@ -173,15 +189,18 @@ async def cb_search_pause(
     session_factory: sessionmaker[Session],
 ) -> None:
     user_id = callback.from_user.id if callback.from_user else None
+    tg_lang = callback.from_user.language_code if callback.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
+
     session = session_factory()
     try:
         repo = SearchRepository(session)
         search = repo.get_by_id(callback_data.sid)
         if search is None or search.user_id != user_id:
-            await callback.answer("❌ Поиск не найден.", show_alert=True)
+            await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
             return
         if not search.is_active:
-            await callback.answer("⏸ Поиск уже на паузе.", show_alert=True)
+            await callback.answer(get_text("err_already_paused", lang), show_alert=True)
             return
         repo.pause_search(search)
         sid = search.id
@@ -190,8 +209,8 @@ async def cb_search_pause(
 
     await _safe_edit(
         callback,
-        f"⏸ Поиск #{sid} поставлен на паузу.",
-        reply_markup=after_action_kb(),
+        get_text("search_paused", lang, sid=sid),
+        reply_markup=after_action_kb(lang=lang),
     )
     await callback.answer()
 
@@ -203,15 +222,18 @@ async def cb_search_resume(
     session_factory: sessionmaker[Session],
 ) -> None:
     user_id = callback.from_user.id if callback.from_user else None
+    tg_lang = callback.from_user.language_code if callback.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
+
     session = session_factory()
     try:
         repo = SearchRepository(session)
         search = repo.get_by_id(callback_data.sid)
         if search is None or search.user_id != user_id:
-            await callback.answer("❌ Поиск не найден.", show_alert=True)
+            await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
             return
         if search.is_active:
-            await callback.answer("▶️ Поиск уже активен.", show_alert=True)
+            await callback.answer(get_text("err_already_active", lang), show_alert=True)
             return
         repo.resume_search(search)
         sid = search.id
@@ -220,8 +242,8 @@ async def cb_search_resume(
 
     await _safe_edit(
         callback,
-        f"▶️ Поиск #{sid} возобновлён.",
-        reply_markup=after_action_kb(),
+        get_text("search_resumed", lang, sid=sid),
+        reply_markup=after_action_kb(lang=lang),
     )
     await callback.answer()
 
@@ -233,12 +255,15 @@ async def cb_search_delete(
     session_factory: sessionmaker[Session],
 ) -> None:
     user_id = callback.from_user.id if callback.from_user else None
+    tg_lang = callback.from_user.language_code if callback.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
+
     session = session_factory()
     try:
         repo = SearchRepository(session)
         search = repo.get_by_id(callback_data.sid)
         if search is None or search.user_id != user_id:
-            await callback.answer("❌ Поиск не найден.", show_alert=True)
+            await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
             return
         sid = search.id
         repo.delete_search(search)
@@ -247,8 +272,8 @@ async def cb_search_delete(
 
     await _safe_edit(
         callback,
-        f"🗑 Поиск #{sid} удалён.",
-        reply_markup=after_action_kb(),
+        get_text("search_deleted", lang, sid=sid),
+        reply_markup=after_action_kb(lang=lang),
     )
     await callback.answer()
 
@@ -260,29 +285,30 @@ async def cb_search_filters(
     session_factory: sessionmaker[Session],
 ) -> None:
     user_id = callback.from_user.id if callback.from_user else None
+    tg_lang = callback.from_user.language_code if callback.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
+
     session = session_factory()
     try:
         repo = SearchRepository(session)
         search = repo.get_by_id(callback_data.sid)
         if search is None or search.user_id != user_id:
-            await callback.answer("❌ Поиск не найден.", show_alert=True)
+            await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
             return
         filters = filters_from_json(search.filters_json)
         sid = search.id
     finally:
         session.close()
 
-    text = (
-        f"🔍 <b>Фильтры поиска #{sid}</b>\n\n"
-        + (
-            "\n".join(f"  • {k}: {v}" for k, v in filters.items())
-            if filters
-            else "(фильтры не установлены)"
-        )
+    content = (
+        "\n".join(f"  • {k}: {v}" for k, v in filters.items())
+        if filters
+        else get_text("filters_none", lang)
     )
+    text = get_text("filters_header", lang, sid=sid, content=content)
     await _safe_edit(
         callback,
         text,
-        reply_markup=filters_menu_kb(sid, bool(filters)),
+        reply_markup=filters_menu_kb(sid, bool(filters), lang=lang),
     )
     await callback.answer()

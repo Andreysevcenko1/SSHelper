@@ -3,7 +3,12 @@ from aiogram.filters.callback_data import CallbackData
 
 class MenuCB(CallbackData, prefix="m"):
     """Main menu navigation."""
-    action: str  # main | searches | add_start
+    action: str  # main | searches | add_start | lang
+
+
+class LangCB(CallbackData, prefix="lng"):
+    """Language selection."""
+    lang: str  # lv | ru | en
 
 
 class SearchCB(CallbackData, prefix="s"):
