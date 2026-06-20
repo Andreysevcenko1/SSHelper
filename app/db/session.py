@@ -1,14 +1,40 @@
+import logging
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.base import Base
+
+logger = logging.getLogger(__name__)
+
+# Columns that must exist in the searches table (name -> SQLite type)
+_REQUIRED_SEARCH_COLUMNS: dict[str, str] = {
+    "base_url": "TEXT",
+    "filters_json": "TEXT",
+    "effective_url": "TEXT",
+}
+
+
+def _migrate_sqlite(engine) -> None:
+    """Add any missing columns to existing SQLite tables without data loss."""
+    with engine.connect() as conn:
+        result = conn.execute(text("PRAGMA table_info(searches)"))
+        existing = {row[1] for row in result}
+
+        for col_name, col_type in _REQUIRED_SEARCH_COLUMNS.items():
+            if col_name not in existing:
+                logger.info("Migration: adding column '%s' to searches", col_name)
+                conn.execute(text(f"ALTER TABLE searches ADD COLUMN {col_name} {col_type}"))
+
+        conn.commit()
 
 
 def create_session_factory(database_url: str) -> sessionmaker[Session]:
     engine = create_engine(database_url, future=True)
     Base.metadata.create_all(bind=engine)
+    if database_url.startswith("sqlite"):
+        _migrate_sqlite(engine)
     return sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
 
 
