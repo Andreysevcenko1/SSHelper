@@ -1,8 +1,11 @@
+import logging
 from aiogram import Bot
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.repo import SearchRepository
 from app.services.ss_parser import Listing, SSParser
+
+logger = logging.getLogger(__name__)
 
 
 class WatcherService:
@@ -16,37 +19,48 @@ class WatcherService:
         try:
             repo = SearchRepository(session)
             searches = repo.get_active_searches()
+            logger.info("Watcher: checking %d active search(es)", len(searches))
 
             for search in searches:
                 try:
                     listings = await self.parser.fetch_listings(search.url, limit=5)
                     await self._process_listings(repo=repo, search=search, listings=listings)
-                except Exception:
+                except Exception as exc:
+                    logger.warning("Watcher: failed to process search #%d — %s", search.id, exc)
                     continue
         finally:
             session.close()
 
     async def _process_listings(self, repo: SearchRepository, search, listings: list[Listing]) -> None:
         if not listings:
+            logger.debug("Watcher: no listings found for search #%d", search.id)
             return
 
         newest = listings[0]
 
         if search.last_seen_external_id is None:
+            logger.info("Watcher: search #%d — initialised last_seen to %s", search.id, newest.external_id)
             repo.update_last_seen(search, newest.external_id)
             return
 
         if newest.external_id == search.last_seen_external_id:
+            logger.debug("Watcher: search #%d — no new listings", search.id)
             return
 
+        logger.info("Watcher: search #%d — new listing %s", search.id, newest.external_id)
         repo.update_last_seen(search, newest.external_id)
 
-        price_text = f"\\nЦена: {newest.price}" if newest.price else ""
+        lines = [
+            f"🔔 Новое объявление (поиск #{search.id}):",
+            f"Название: {newest.title}",
+        ]
+        if newest.price:
+            lines.append(f"Цена: {newest.price}")
+        if newest.city:
+            lines.append(f"Город: {newest.city}")
+        lines.append(f"🔗 {newest.url}")
+
         await self.bot.send_message(
             chat_id=search.user_id,
-            text=(
-                f"Найдено новое объявление по поиску #{search.id}:\\n"
-                f"{newest.title}{price_text}\\n"
-                f"{newest.url}"
-            ),
+            text="\n".join(lines),
         )

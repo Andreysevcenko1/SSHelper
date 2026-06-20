@@ -19,6 +19,27 @@ class SearchRepository:
         stmt = select(Search).where(Search.is_active.is_(True))
         return list(self.session.scalars(stmt).all())
 
+    def get_user_searches(self, user_id: int) -> list[Search]:
+        stmt = select(Search).where(Search.user_id == user_id).order_by(Search.id)
+        return list(self.session.scalars(stmt).all())
+
+    def get_by_id(self, search_id: int) -> Search | None:
+        return self.session.get(Search, search_id)
+
+    def pause_search(self, search: Search) -> None:
+        search.is_active = False
+        self.session.add(search)
+        self.session.commit()
+
+    def resume_search(self, search: Search) -> None:
+        search.is_active = True
+        self.session.add(search)
+        self.session.commit()
+
+    def delete_search(self, search: Search) -> None:
+        self.session.delete(search)
+        self.session.commit()
+
     def update_last_seen(self, search: Search, external_id: str) -> None:
         search.last_seen_external_id = external_id
         self.session.add(search)
