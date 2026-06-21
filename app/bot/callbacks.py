@@ -3,7 +3,7 @@ from aiogram.filters.callback_data import CallbackData
 
 class MenuCB(CallbackData, prefix="m"):
     """Main menu navigation."""
-    action: str  # main | searches | add_start | lang
+    action: str  # main | searches | add_start | lang | help
 
 
 class LangCB(CallbackData, prefix="lng"):
@@ -19,7 +19,7 @@ class SearchCB(CallbackData, prefix="s"):
 
 class FilterCB(CallbackData, prefix="f"):
     """Filter menu actions."""
-    action: str  # show | edit_start | clear
+    action: str  # show | del_start | edit_start | clear
     sid: int
 
 

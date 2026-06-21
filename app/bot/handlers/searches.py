@@ -1,5 +1,4 @@
 import logging
-from urllib.parse import urlparse
 
 from aiogram import Router
 from aiogram.filters import Command
@@ -10,6 +9,7 @@ from app.bot.handlers.common import get_user_lang
 from app.bot.keyboards.searches import (
     after_action_kb,
     error_kb,
+    no_searches_kb,
     searches_list_kb,
 )
 from app.db.repo import SearchRepository
@@ -48,7 +48,7 @@ async def cmd_list(message: Message, session_factory: sessionmaker[Session]) -> 
     if not searches:
         await message.answer(
             get_text("no_searches", lang),
-            reply_markup=searches_list_kb([], lang=lang),
+            reply_markup=no_searches_kb(lang=lang),
         )
         return
 
@@ -92,7 +92,10 @@ async def cmd_pause(message: Message, session_factory: sessionmaker[Session]) ->
         repo = SearchRepository(session)
         search = repo.get_by_id(search_id)
         if search is None or search.user_id != user_id:
-            await message.answer(get_text("err_search_not_found_short", lang), reply_markup=error_kb(lang=lang))
+            await message.answer(
+                get_text("err_search_not_found_id", lang, sid=search_id),
+                reply_markup=error_kb(lang=lang),
+            )
             return
         if not search.is_active:
             await message.answer(
@@ -106,7 +109,7 @@ async def cmd_pause(message: Message, session_factory: sessionmaker[Session]) ->
 
     await message.answer(
         get_text("search_paused", lang, sid=search_id),
-        reply_markup=after_action_kb(lang=lang),
+        reply_markup=after_action_kb(search_id=search_id, lang=lang),
     )
 
 
@@ -134,7 +137,10 @@ async def cmd_resume(message: Message, session_factory: sessionmaker[Session]) -
         repo = SearchRepository(session)
         search = repo.get_by_id(search_id)
         if search is None or search.user_id != user_id:
-            await message.answer(get_text("err_search_not_found_short", lang), reply_markup=error_kb(lang=lang))
+            await message.answer(
+                get_text("err_search_not_found_id", lang, sid=search_id),
+                reply_markup=error_kb(lang=lang),
+            )
             return
         if search.is_active:
             await message.answer(
@@ -148,7 +154,7 @@ async def cmd_resume(message: Message, session_factory: sessionmaker[Session]) -
 
     await message.answer(
         get_text("search_resumed", lang, sid=search_id),
-        reply_markup=after_action_kb(lang=lang),
+        reply_markup=after_action_kb(search_id=search_id, lang=lang),
     )
 
 
@@ -176,7 +182,10 @@ async def cmd_delete(message: Message, session_factory: sessionmaker[Session]) -
         repo = SearchRepository(session)
         search = repo.get_by_id(search_id)
         if search is None or search.user_id != user_id:
-            await message.answer(get_text("err_search_not_found_short", lang), reply_markup=error_kb(lang=lang))
+            await message.answer(
+                get_text("err_search_not_found_id", lang, sid=search_id),
+                reply_markup=error_kb(lang=lang),
+            )
             return
         repo.delete_search(search)
     finally:

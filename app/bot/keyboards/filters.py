@@ -17,7 +17,7 @@ _PAGE_SIZE_OPTS = 8
 
 
 def filters_menu_kb(search_id: int, has_filters: bool, lang: str = "lv") -> InlineKeyboardMarkup:
-    """Top-level filter menu for a search."""
+    """Top-level filter menu for a search (⚙️ Фильтры sub-menu)."""
     b = InlineKeyboardBuilder()
     b.button(
         text=get_text("btn_show_filters", lang),
@@ -28,6 +28,10 @@ def filters_menu_kb(search_id: int, has_filters: bool, lang: str = "lv") -> Inli
         callback_data=FilterCB(action="edit_start", sid=search_id),
     )
     if has_filters:
+        b.button(
+            text=get_text("btn_del_filter", lang),
+            callback_data=FilterCB(action="del_start", sid=search_id),
+        )
         b.button(
             text=get_text("btn_clear_filters", lang),
             callback_data=FilterCB(action="clear", sid=search_id),
@@ -61,6 +65,22 @@ def filter_items_kb(search_id: int, filters: dict, lang: str = "lv") -> InlineKe
     b.button(
         text=get_text("btn_clear_filters", lang),
         callback_data=FilterCB(action="clear", sid=search_id),
+    )
+    b.button(
+        text=get_text("btn_back_to_search", lang),
+        callback_data=FilterCB(action="show", sid=search_id),
+    )
+    b.button(text=get_text("btn_back_to_menu", lang), callback_data=MenuCB(action="main"))
+    b.adjust(1)
+    return b.as_markup()
+
+
+def no_filters_kb(search_id: int, lang: str = "lv") -> InlineKeyboardMarkup:
+    """Shown when no filters are set (empty state)."""
+    b = InlineKeyboardBuilder()
+    b.button(
+        text=get_text("btn_edit_filter", lang),
+        callback_data=FilterCB(action="edit_start", sid=search_id),
     )
     b.button(
         text=get_text("btn_back_to_search", lang),
@@ -161,7 +181,7 @@ def filter_options_kb(
         b.button(text=label, callback_data=cb)
 
     b.button(
-        text=get_text("btn_back_to_search", lang),
+        text=get_text("btn_back", lang),
         callback_data=FilterCB(action="edit_start", sid=search_id),
     )
     b.button(text=get_text("btn_back_to_menu", lang), callback_data=MenuCB(action="main"))

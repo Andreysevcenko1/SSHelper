@@ -56,15 +56,15 @@ def searches_list_kb(searches: list, lang: str = "lv") -> InlineKeyboardMarkup:
 
 
 def search_actions_kb(search_id: int, is_active: bool, lang: str = "lv") -> InlineKeyboardMarkup:
-    """Actions for a specific search: pause/resume, filters, delete, back."""
+    """Context menu for a specific search: filters, pause/resume, delete, back."""
     b = InlineKeyboardBuilder()
+    b.button(text=get_text("btn_filters", lang), callback_data=SearchCB(action="filters", sid=search_id))
     if is_active:
         b.button(text=get_text("btn_pause", lang), callback_data=SearchCB(action="pause", sid=search_id))
     else:
         b.button(text=get_text("btn_resume", lang), callback_data=SearchCB(action="resume", sid=search_id))
-    b.button(text=get_text("btn_filters", lang), callback_data=SearchCB(action="filters", sid=search_id))
     b.button(text=get_text("btn_delete", lang), callback_data=SearchCB(action="delete", sid=search_id))
-    b.button(text=get_text("btn_my_searches_short", lang), callback_data=MenuCB(action="searches"))
+    b.button(text=get_text("btn_back_to_list", lang), callback_data=MenuCB(action="searches"))
     b.button(text=get_text("btn_back_to_menu", lang), callback_data=MenuCB(action="main"))
     b.adjust(2, 1, 2)
     return b.as_markup()
@@ -81,12 +81,26 @@ def after_add_kb(search_id: int, lang: str = "lv") -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def after_action_kb(lang: str = "lv") -> InlineKeyboardMarkup:
+def after_action_kb(search_id: int = 0, lang: str = "lv") -> InlineKeyboardMarkup:
     """Shown after pause/resume/delete."""
     b = InlineKeyboardBuilder()
+    if search_id:
+        b.button(
+            text=get_text("btn_back_to_search", lang),
+            callback_data=SearchCB(action="view", sid=search_id),
+        )
     b.button(text=get_text("btn_my_searches_short", lang), callback_data=MenuCB(action="searches"))
     b.button(text=get_text("btn_back_to_menu", lang), callback_data=MenuCB(action="main"))
-    b.adjust(2)
+    b.adjust(1)
+    return b.as_markup()
+
+
+def no_searches_kb(lang: str = "lv") -> InlineKeyboardMarkup:
+    """Empty-state keyboard when user has no searches."""
+    b = InlineKeyboardBuilder()
+    b.button(text=get_text("btn_add_search", lang), callback_data=MenuCB(action="add_start"))
+    b.button(text=get_text("btn_back_to_menu", lang), callback_data=MenuCB(action="main"))
+    b.adjust(1)
     return b.as_markup()
 
 
