@@ -1,7 +1,12 @@
 import hashlib
 import json
+import logging
 import re
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+from app.i18n import get_text
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # SS.lv raw-key patterns used for human-readable display labels
@@ -12,46 +17,91 @@ _RE_PRICE_MIN = re.compile(r"^(?:pr_?min|price_?(?:min|from))$", re.IGNORECASE)
 _RE_PRICE_MAX = re.compile(r"^(?:pr_?max|price_?(?:max|to))$", re.IGNORECASE)
 
 
-def filter_display_label(key: str, schema: dict | None = None) -> str:
+def filter_display_label(
+    key: str,
+    schema: dict | None = None,
+    locale: str = "lv",
+) -> str:
     """Return a human-readable display label for a raw SS.lv filter key.
 
     Priority:
     1. ``schema[key]["label"]`` when schema is provided.
-    2. Pattern-based fallbacks for common SS.lv key shapes
-       (``opt[N]``, ``topt[N]``, ``mid[N]``, ``pr_min``, ``pr_max``).
+    2. Pattern-based i18n fallbacks for common SS.lv key shapes
+       (``opt[N]``/``topt[N]`` → "Фильтр #N", ``mid[N]`` → "Район #N",
+       ``pr_min`` → "Цена от", ``pr_max`` → "Цена до").
     3. Generic cleanup: remove brackets, replace underscores with spaces.
 
     The raw key is **never** returned as-is when it looks like an SS.lv
     internal parameter (i.e. contains ``[`` or ``]``).
+
+    Args:
+        key: Raw SS.lv filter parameter name.
+        schema: Optional dict mapping key → ``{"label": ..., "options": ...}``.
+        locale: BCP-47 language tag used for i18n fallback strings.
     """
+    resolved: str
+
     # 1. Schema lookup
     if schema:
         info = schema.get(key)
         if info:
             lbl = (info.get("label") or "").strip()
             if lbl:
-                return lbl
+                resolved = lbl
+                logger.debug(
+                    "filter_display_label: key=%r locale=%s → %r (schema)",
+                    key, locale, resolved,
+                )
+                return resolved
 
-    # 2. Pattern-based fallbacks
+    # 2. Pattern-based i18n fallbacks
     if _RE_PRICE_MIN.match(key):
-        return "Цена от"
+        resolved = get_text("filter_lbl_price_from", locale)
+        logger.debug(
+            "filter_display_label: key=%r locale=%s → %r (price_min pattern)",
+            key, locale, resolved,
+        )
+        return resolved
+
     if _RE_PRICE_MAX.match(key):
-        return "Цена до"
+        resolved = get_text("filter_lbl_price_to", locale)
+        logger.debug(
+            "filter_display_label: key=%r locale=%s → %r (price_max pattern)",
+            key, locale, resolved,
+        )
+        return resolved
 
     m = _RE_OPT.match(key)
     if m:
         n = m.group(1)
-        return f"Фильтр {n}" if n else "Фильтр"
+        base = get_text("filter_lbl_opt", locale)
+        resolved = f"{base} #{n}" if n else base
+        logger.debug(
+            "filter_display_label: key=%r locale=%s → %r (opt pattern)",
+            key, locale, resolved,
+        )
+        return resolved
 
     m = _RE_MID.match(key)
     if m:
         n = m.group(1)
-        return f"Район {n}" if n else "Район"
+        base = get_text("filter_lbl_district", locale)
+        resolved = f"{base} #{n}" if n else base
+        logger.debug(
+            "filter_display_label: key=%r locale=%s → %r (mid pattern)",
+            key, locale, resolved,
+        )
+        return resolved
 
     # 3. Generic cleanup: drop brackets, underscores → spaces
     cleaned = re.sub(r"[\[\]]", "", key).replace("_", " ").strip()
     cleaned = re.sub(r"\s+", " ", cleaned)
-    return cleaned or key
+    resolved = cleaned or key
+    logger.debug(
+        "filter_display_label: key=%r locale=%s → %r (generic cleanup)",
+        key, locale, resolved,
+    )
+    return resolved
 
 
 def extract_filters_from_url(url: str) -> dict[str, str | list[str]]:
