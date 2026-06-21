@@ -351,6 +351,27 @@ _T: dict[str, dict[str, str]] = {
         "ru": "✏️ Введите значение для поля <b>{field}</b>:",
         "en": "✏️ Enter a value for filter field <b>{field}</b>:",
     },
+    # Label fallbacks used by filter_display_label when no schema label exists
+    "filter_lbl_price_from": {
+        "lv": "Cena no",
+        "ru": "Цена от",
+        "en": "Price from",
+    },
+    "filter_lbl_price_to": {
+        "lv": "Cena līdz",
+        "ru": "Цена до",
+        "en": "Price to",
+    },
+    "filter_lbl_opt": {
+        "lv": "Filtrs",
+        "ru": "Фильтр",
+        "en": "Filter",
+    },
+    "filter_lbl_district": {
+        "lv": "Rajons",
+        "ru": "Район",
+        "en": "District",
+    },
     # ------------------------------------------------------------------ #
     # Errors                                                               #
     # ------------------------------------------------------------------ #

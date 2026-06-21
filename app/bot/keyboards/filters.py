@@ -55,7 +55,7 @@ def filter_items_kb(
     """Shows current active filters, each with a 🗑 delete button."""
     b = InlineKeyboardBuilder()
     for key, value in filters.items():
-        label = filter_display_label(key, schema)
+        label = filter_display_label(key, schema, lang)
         display = f"{label} = {value}"
         if len(display) > 32:
             display = display[:30] + "…"
@@ -111,7 +111,7 @@ def filter_fields_kb(
     page_fields = fields[start:end]
 
     for idx, _name, label in page_fields:
-        display = label or _name
+        display = label
         if len(display) > 32:
             display = display[:30] + "…"
         b.button(
