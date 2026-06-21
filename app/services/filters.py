@@ -12,9 +12,13 @@ logger = logging.getLogger(__name__)
 # SS.lv raw-key patterns used for human-readable display labels
 # ---------------------------------------------------------------------------
 _RE_OPT = re.compile(r"^(?:topt|opt)\[(\d*)\]$", re.IGNORECASE)
-_RE_MID = re.compile(r"^mid\[(\d*)\]$", re.IGNORECASE)
+_RE_TOPT_RANGE = re.compile(r"^topt\[(\d+)\]\[(min|max)\]$", re.IGNORECASE)
+_RE_MID = re.compile(r"^mid\[([^\]]*)\]$", re.IGNORECASE)
 _RE_PRICE_MIN = re.compile(r"^(?:pr_?min|price_?(?:min|from))$", re.IGNORECASE)
 _RE_PRICE_MAX = re.compile(r"^(?:pr_?max|price_?(?:max|to))$", re.IGNORECASE)
+
+# SS.lv numeric ID for the price range topt field (topt[15][min/max])
+_PRICE_TOPT_ID = "15"
 
 
 def filter_display_label(
@@ -67,6 +71,26 @@ def filter_display_label(
         resolved = get_text("filter_lbl_price_to", locale)
         logger.debug(
             "filter_display_label: key=%r locale=%s → %r (price_max pattern)",
+            key, locale, resolved,
+        )
+        return resolved
+
+    m = _RE_TOPT_RANGE.match(key)
+    if m:
+        n, bound = m.group(1), m.group(2).lower()
+        if n == _PRICE_TOPT_ID:
+            text_key = (
+                "filter_lbl_topt_price_min" if bound == "min" else "filter_lbl_topt_price_max"
+            )
+            resolved = get_text(text_key, locale)
+        else:
+            suffix = get_text(
+                "filter_lbl_range_min" if bound == "min" else "filter_lbl_range_max", locale
+            )
+            base = get_text("filter_lbl_opt", locale)
+            resolved = f"{base} #{n}: {suffix}"
+        logger.debug(
+            "filter_display_label: key=%r locale=%s → %r (topt range pattern)",
             key, locale, resolved,
         )
         return resolved

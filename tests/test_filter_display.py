@@ -28,6 +28,12 @@ _RAW_KEY_PATTERN = re.compile(r"(opt|topt|mid)\[")
         ("pr_max", "Price to"),
         ("PR_MIN", "Price from"),
         ("PR_MAX", "Price to"),
+        ("topt[15][min]", "Price: from"),
+        ("topt[15][max]", "Price: to"),
+        ("topt[5][min]", "Filter #5: from"),
+        ("topt[5][max]", "Filter #5: to"),
+        ("topt[15][MIN]", "Price: from"),
+        ("topt[15][MAX]", "Price: to"),
     ],
 )
 def test_display_label_pattern_fallbacks_en(key, expected):
@@ -47,6 +53,10 @@ def test_display_label_pattern_fallbacks_en(key, expected):
         ("pr_max", "Цена до"),
         ("PR_MIN", "Цена от"),
         ("PR_MAX", "Цена до"),
+        ("topt[15][min]", "Цена: от"),
+        ("topt[15][max]", "Цена: до"),
+        ("topt[7][min]", "Фильтр #7: от"),
+        ("topt[7][max]", "Фильтр #7: до"),
     ],
 )
 def test_display_label_pattern_fallbacks_ru(key, expected):
@@ -62,6 +72,10 @@ def test_display_label_pattern_fallbacks_ru(key, expected):
         ("mid[78]", "Rajons #78"),
         ("pr_min", "Cena no"),
         ("pr_max", "Cena līdz"),
+        ("topt[15][min]", "Cena: no"),
+        ("topt[15][max]", "Cena: līdz"),
+        ("topt[3][min]", "Filtrs #3: no"),
+        ("topt[3][max]", "Filtrs #3: līdz"),
     ],
 )
 def test_display_label_pattern_fallbacks_lv(key, expected):
@@ -85,7 +99,7 @@ def test_display_label_generic_cleanup():
 
 
 def test_display_label_never_returns_bracket_key_without_schema():
-    for key in ("opt[1]", "topt[2]", "mid[3]"):
+    for key in ("opt[1]", "topt[2]", "mid[3]", "topt[15][min]", "topt[15][max]", "topt[7][min]"):
         label = filter_display_label(key)
         assert not _RAW_KEY_PATTERN.search(label), (
             f"Raw key pattern leaked into label for key={key!r}: {label!r}"
@@ -131,12 +145,16 @@ def test_filter_items_kb_with_schema_uses_schema_labels():
 
 
 def _make_large_filters() -> dict:
-    """Generate 25 filter entries covering all raw-key patterns."""
+    """Generate 25+ filter entries covering all raw-key patterns."""
     filters: dict = {}
     for i in range(1, 11):
         filters[f"opt[{i}]"] = str(i * 10)
     for i in range(11, 21):
         filters[f"topt[{i}]"] = str(i * 5)
+    filters["topt[15][min]"] = "1000"
+    filters["topt[15][max]"] = "9000"
+    filters["topt[7][min]"] = "10"
+    filters["topt[7][max]"] = "50"
     filters["mid[1]"] = "1"
     filters["mid[2]"] = "2"
     filters["pr_min"] = "1000"
