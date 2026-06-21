@@ -44,7 +44,7 @@ async def cmd_lang(
     lang = _get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
     await message.answer(
         get_text("lang_select_prompt", lang),
-        reply_markup=lang_selection_kb(),
+        reply_markup=lang_selection_kb(lang=lang),
     )
 
 
@@ -61,10 +61,10 @@ async def cb_menu_lang(
     try:
         await callback.message.edit_text(
             get_text("lang_select_prompt", lang),
-            reply_markup=lang_selection_kb(),
+            reply_markup=lang_selection_kb(lang=lang),
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("cb_menu_lang edit failed: %s", exc)
     await callback.answer()
 
 
@@ -94,6 +94,6 @@ async def cb_lang_select(
             f"{confirmation}\n\n{get_text('menu_welcome', new_lang)}",
             reply_markup=main_menu_kb(lang=new_lang),
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("cb_lang_select edit failed: %s", exc)
     await callback.answer(confirmation)

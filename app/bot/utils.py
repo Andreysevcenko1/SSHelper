@@ -1,4 +1,5 @@
 import logging
+from typing import Sequence
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
@@ -35,3 +36,20 @@ async def try_delete_message(message: Message) -> bool:
     if message.bot is None:
         return False
     return await delete_message_safe(message.bot, message.chat.id, message.message_id)
+
+
+async def cleanup_user_and_service_messages(
+    bot: Bot,
+    chat_id: int,
+    message_ids: Sequence[int],
+) -> int:
+    """Silently delete a list of messages (user replies and bot service messages).
+
+    Returns the count of successfully deleted messages.
+    Never raises.
+    """
+    deleted = 0
+    for msg_id in message_ids:
+        if await delete_message_safe(bot, chat_id, msg_id):
+            deleted += 1
+    return deleted

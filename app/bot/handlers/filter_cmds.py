@@ -22,6 +22,7 @@ from app.bot.keyboards.filters import (
     filter_items_kb,
     filter_options_kb,
     filters_menu_kb,
+    no_filters_kb,
 )
 from app.bot.keyboards.searches import after_action_kb, error_kb
 from app.bot.states import EditFilterFSM
@@ -72,6 +73,14 @@ def _field_by_idx(schema: dict, fidx: int) -> tuple[str, dict] | tuple[None, Non
     return None, None
 
 
+async def _safe_edit(callback: CallbackQuery, text: str, reply_markup=None) -> None:
+    try:
+        await callback.message.edit_text(text, reply_markup=reply_markup)
+    except TelegramBadRequest as exc:
+        if "message is not modified" not in str(exc).lower():
+            logger.debug("_safe_edit failed: %s", exc)
+
+
 # ------------------------------------------------------------------ #
 # /filters <search_id>                                                 #
 # ------------------------------------------------------------------ #
@@ -112,7 +121,10 @@ async def cmd_filters(
         repo = SearchRepository(session)
         search = repo.get_by_id(search_id)
         if search is None or search.user_id != user_id:
-            await message.answer(get_text("err_search_not_found_short", lang), reply_markup=error_kb(lang=lang))
+            await message.answer(
+                get_text("err_search_not_found_id", lang, sid=search_id),
+                reply_markup=error_kb(lang=lang),
+            )
             return
         filters = filters_from_json(search.filters_json)
         sid = search.id
@@ -168,7 +180,10 @@ async def cmd_setfilter(
         repo = SearchRepository(session)
         search = repo.get_by_id(search_id)
         if search is None or search.user_id != user_id:
-            await message.answer(get_text("err_search_not_found_short", lang), reply_markup=error_kb(lang=lang))
+            await message.answer(
+                get_text("err_search_not_found_id", lang, sid=search_id),
+                reply_markup=error_kb(lang=lang),
+            )
             return
         repo.set_filter(search, field, value)
         sid = search.id
@@ -210,7 +225,7 @@ async def cmd_delfilter(
     try:
         search_id = int(parts[1].strip())
     except ValueError:
-        await message.answer("❌ ID поиска должен быть числом.", reply_markup=error_kb(lang=lang))
+        await message.answer(get_text("err_usage_delfilter", lang), reply_markup=error_kb(lang=lang))
         return
 
     field = parts[2].strip()
@@ -220,7 +235,10 @@ async def cmd_delfilter(
         repo = SearchRepository(session)
         search = repo.get_by_id(search_id)
         if search is None or search.user_id != user_id:
-            await message.answer(get_text("err_search_not_found_short", lang), reply_markup=error_kb(lang=lang))
+            await message.answer(
+                get_text("err_search_not_found_id", lang, sid=search_id),
+                reply_markup=error_kb(lang=lang),
+            )
             return
         deleted = repo.delete_filter(search, field)
         sid = search.id
@@ -229,7 +247,7 @@ async def cmd_delfilter(
 
     if not deleted:
         await message.answer(
-            get_text("err_filter_not_found", lang, field=field),
+            get_text("err_filter_key_not_found", lang, key=field),
             reply_markup=error_kb(back_search_id=sid, lang=lang),
         )
         return
@@ -277,10 +295,20 @@ async def cmd_clearfilters(
         repo = SearchRepository(session)
         search = repo.get_by_id(search_id)
         if search is None or search.user_id != user_id:
-            await message.answer(get_text("err_search_not_found_short", lang), reply_markup=error_kb(lang=lang))
+            await message.answer(
+                get_text("err_search_not_found_id", lang, sid=search_id),
+                reply_markup=error_kb(lang=lang),
+            )
+            return
+        existing_filters = filters_from_json(search.filters_json)
+        sid = search.id
+        if not existing_filters:
+            await message.answer(
+                get_text("err_no_filters_set", lang),
+                reply_markup=no_filters_kb(sid, lang=lang),
+            )
             return
         repo.clear_filters(search)
-        sid = search.id
     finally:
         session.close()
 
@@ -291,7 +319,7 @@ async def cmd_clearfilters(
 
 
 # ------------------------------------------------------------------ #
-# FilterCB: show / edit_start / clear                                  #
+# FilterCB: show / del_start / edit_start / clear                      #
 # ------------------------------------------------------------------ #
 
 
@@ -318,14 +346,55 @@ async def cb_filter_show(
         session.close()
 
     if not filters:
-        content = get_text("filters_none", lang)
-        text = get_text("filters_header", lang, sid=sid, content=content)
-        await _safe_edit(callback, text, reply_markup=filters_menu_kb(sid, False, lang=lang))
-    else:
-        content = get_text("filters_none", lang)  # not used below
-        text = get_text("filters_header", lang, sid=sid, content="") + "\n" + (
-            "\n".join(f"  • {k}: {v}" for k, v in filters.items())
+        await _safe_edit(
+            callback,
+            get_text("err_no_filters_set", lang),
+            reply_markup=no_filters_kb(sid, lang=lang),
         )
+    else:
+        lines = [get_text("filters_header", lang, sid=sid, content="")]
+        lines += [f"  • {k}: {v}" for k, v in filters.items()]
+        await _safe_edit(
+            callback,
+            "\n".join(lines),
+            reply_markup=filters_menu_kb(sid, bool(filters), lang=lang),
+        )
+
+    await callback.answer()
+
+
+@router.callback_query(FilterCB.filter(F.action == "del_start"))
+async def cb_filter_del_start(
+    callback: CallbackQuery,
+    callback_data: FilterCB,
+    session_factory: sessionmaker[Session],
+) -> None:
+    """Show filters with individual delete buttons."""
+    user_id = callback.from_user.id if callback.from_user else None
+    tg_lang = callback.from_user.language_code if callback.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
+
+    session = session_factory()
+    try:
+        repo = SearchRepository(session)
+        search = repo.get_by_id(callback_data.sid)
+        if search is None or search.user_id != user_id:
+            await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
+            return
+        filters = filters_from_json(search.filters_json)
+        sid = search.id
+    finally:
+        session.close()
+
+    if not filters:
+        await _safe_edit(
+            callback,
+            get_text("err_no_filters_set", lang),
+            reply_markup=no_filters_kb(sid, lang=lang),
+        )
+    else:
+        content = "\n".join(f"  • {k}: {v}" for k, v in filters.items())
+        text = get_text("filters_header", lang, sid=sid, content=content)
         await _safe_edit(callback, text, reply_markup=filter_items_kb(sid, filters, lang=lang))
 
     await callback.answer()
@@ -366,7 +435,6 @@ async def cb_filter_edit_start(
         return
 
     fields = _sorted_fields(schema)
-    # Store schema in FSM so subsequent field/option callbacks can retrieve it
     await state.update_data(schema=schema, sid=sid)
 
     await _safe_edit(
@@ -393,8 +461,17 @@ async def cb_filter_clear(
         if search is None or search.user_id != user_id:
             await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
             return
-        repo.clear_filters(search)
+        existing_filters = filters_from_json(search.filters_json)
         sid = search.id
+        if not existing_filters:
+            await _safe_edit(
+                callback,
+                get_text("err_no_filters_set", lang),
+                reply_markup=no_filters_kb(sid, lang=lang),
+            )
+            await callback.answer()
+            return
+        repo.clear_filters(search)
     finally:
         session.close()
 
@@ -435,7 +512,10 @@ async def cb_filter_delete_key(
         session.close()
 
     if not deleted:
-        await callback.answer(get_text("err_filter_not_found", lang, field=callback_data.key), show_alert=True)
+        await callback.answer(
+            get_text("err_filter_key_not_found", lang, key=callback_data.key),
+            show_alert=True,
+        )
         return
 
     if filters:
@@ -695,7 +775,10 @@ async def fsm_filter_value(
                 return
             except TelegramBadRequest:
                 pass
-        await message.answer(get_text("filter_enter_value", lang, field=field_label), reply_markup=cancel_kb(sid, lang=lang))
+        await message.answer(
+            get_text("filter_enter_value", lang, field=field_label),
+            reply_markup=cancel_kb(sid, lang=lang),
+        )
         return
 
     session = session_factory()
@@ -704,7 +787,10 @@ async def fsm_filter_value(
         search = repo.get_by_id(sid)
         if search is None or search.user_id != user_id:
             await state.clear()
-            await message.answer(get_text("err_search_not_found_short", lang), reply_markup=error_kb(lang=lang))
+            await message.answer(
+                get_text("err_search_not_found_short", lang),
+                reply_markup=error_kb(lang=lang),
+            )
             return
         repo.set_filter(search, field_name, value)
     finally:
@@ -727,16 +813,3 @@ async def fsm_filter_value(
         except TelegramBadRequest:
             pass
     await message.answer(text, reply_markup=kb)
-
-
-# ------------------------------------------------------------------ #
-# Shared helper                                                        #
-# ------------------------------------------------------------------ #
-
-
-async def _safe_edit(callback: CallbackQuery, text: str, reply_markup=None) -> None:
-    try:
-        await callback.message.edit_text(text, reply_markup=reply_markup)
-    except TelegramBadRequest as exc:
-        if "message is not modified" not in str(exc).lower():
-            raise

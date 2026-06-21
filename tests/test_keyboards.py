@@ -98,7 +98,7 @@ def test_search_actions_kb_paused():
 def test_after_add_kb():
     kb = after_add_kb(3, lang="ru")
     texts = {b.text for row in kb.inline_keyboard for b in row}
-    assert "🔍 Открыть фильтры" in texts
+    assert "⚙️ Фильтры" in texts
     assert "📋 Мои поиски" in texts
 
 
@@ -119,7 +119,7 @@ def test_error_kb_without_search_id():
 def test_error_kb_with_search_id():
     kb = error_kb(back_search_id=7, lang="ru")
     texts = {b.text for row in kb.inline_keyboard for b in row}
-    assert "◀️ Назад к поиску" in texts
+    assert "🔙 Назад к поиску" in texts
 
 
 # ------------------------------------------------------------------ #
@@ -130,14 +130,14 @@ def test_error_kb_with_search_id():
 def test_filters_menu_kb_no_filters():
     kb = filters_menu_kb(1, has_filters=False, lang="ru")
     texts = {b.text for row in kb.inline_keyboard for b in row}
-    assert "🗑 Очистить все фильтры" not in texts
-    assert "📋 Показать фильтры" in texts
+    assert "♻️ Очистить фильтры" not in texts
+    assert "👁 Показать фильтры" in texts
 
 
 def test_filters_menu_kb_with_filters():
     kb = filters_menu_kb(1, has_filters=True, lang="ru")
     texts = {b.text for row in kb.inline_keyboard for b in row}
-    assert "🗑 Очистить все фильтры" in texts
+    assert "♻️ Очистить фильтры" in texts
 
 
 def test_filter_items_kb():
@@ -178,8 +178,8 @@ def test_filter_options_kb():
 def test_after_filter_kb():
     kb = after_filter_kb(4, lang="ru")
     texts = {b.text for row in kb.inline_keyboard for b in row}
-    assert "📋 Показать фильтры" in texts
-    assert "◀️ Назад к поиску" in texts
+    assert "👁 Показать фильтры" in texts
+    assert "🔙 Назад к поиску" in texts
 
 
 def test_cancel_kb():
@@ -191,4 +191,4 @@ def test_cancel_kb():
 def test_cancel_kb_with_search_id():
     kb = cancel_kb(search_id=3, lang="ru")
     texts = {b.text for row in kb.inline_keyboard for b in row}
-    assert "◀️ Назад к поиску" in texts
+    assert "🔙 Назад к поиску" in texts

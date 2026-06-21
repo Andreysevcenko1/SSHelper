@@ -6,9 +6,11 @@ from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.types import BotCommand
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.bot import get_main_router
 from app.config import load_config
+from app.db.repo import SearchRepository
 from app.db.session import create_session_factory
 from app.services.ss_parser import SSParser
 from app.services.watcher import WatcherService
@@ -26,6 +28,23 @@ _BOT_COMMANDS = [
     BotCommand(command="delfilter", description="Удалить фильтр: /delfilter <ID> <поле>"),
     BotCommand(command="clearfilters", description="Очистить фильтры: /clearfilters <ID>"),
 ]
+
+logger = logging.getLogger(__name__)
+
+
+def _db_hygiene_job(session_factory: sessionmaker[Session]) -> None:
+    """Periodic DB hygiene: prune dead searches and vacuum."""
+    session = session_factory()
+    try:
+        repo = SearchRepository(session)
+        pruned = repo.prune_old_inactive_searches(older_than_days=90)
+        if pruned:
+            logger.info("DB hygiene: pruned %d old inactive search(es)", pruned)
+        repo.vacuum()
+    except Exception as exc:
+        logger.warning("DB hygiene job failed: %s", exc)
+    finally:
+        session.close()
 
 
 async def run() -> None:
@@ -48,6 +67,13 @@ async def run() -> None:
 
     scheduler = AsyncIOScheduler()
     scheduler.add_job(watcher.check_all, trigger="interval", seconds=config.poll_interval_seconds)
+    # DB hygiene runs once a day
+    scheduler.add_job(
+        _db_hygiene_job,
+        trigger="interval",
+        hours=24,
+        args=[session_factory],
+    )
     scheduler.start()
 
     try:

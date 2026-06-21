@@ -1,6 +1,7 @@
 import json
+from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.db.models import Search, UserSettings
@@ -132,3 +133,38 @@ class SearchRepository:
         search.effective_url = search.base_url or search.url
         self.session.add(search)
         self.session.commit()
+
+    # ------------------------------------------------------------------ #
+    # DB Hygiene                                                           #
+    # ------------------------------------------------------------------ #
+
+    def prune_old_inactive_searches(self, older_than_days: int = 90) -> int:
+        """Delete paused searches older than *older_than_days* days.
+
+        Returns the number of deleted rows.
+        Only removes searches that have been paused since creation
+        (last_seen_external_id is None) — i.e. never actually ran.
+        These are effectively orphaned records.
+        """
+        cutoff = datetime.utcnow() - timedelta(days=older_than_days)
+        stmt = select(Search).where(
+            Search.is_active.is_(False),
+            Search.last_seen_external_id.is_(None),
+            Search.created_at < cutoff,
+        )
+        old_searches = list(self.session.scalars(stmt).all())
+        for s in old_searches:
+            self.session.delete(s)
+        if old_searches:
+            self.session.commit()
+        return len(old_searches)
+
+    def vacuum(self) -> None:
+        """Run VACUUM on the database (SQLite only, no-op for other engines).
+
+        Reclaims space freed by deleted rows.
+        """
+        try:
+            self.session.execute(text("VACUUM"))
+        except Exception:
+            pass  # Not supported on all engines (e.g. PostgreSQL in transactions)

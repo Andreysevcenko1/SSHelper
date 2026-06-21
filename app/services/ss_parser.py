@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import re
 from urllib.parse import urljoin
@@ -9,13 +9,14 @@ from bs4 import BeautifulSoup, Tag
 logger = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
+@dataclass
 class Listing:
     external_id: str
     title: str
     url: str
     price: str | None = None
     city: str | None = None
+    photo_urls: list = field(default_factory=list)
 
 
 _ID_RE = re.compile(r"(\d{5,})")
@@ -82,6 +83,15 @@ class SSParser:
                 if city_text:
                     city = city_text
 
+            # Extract thumbnail photo if available
+            photo_urls: list[str] = []
+            img_tag = row.select_one("img[src]")
+            if img_tag:
+                img_src = (img_tag.get("src") or "").strip()
+                if img_src and not img_src.endswith((".gif",)):
+                    photo_url = urljoin(base_url, img_src)
+                    photo_urls.append(photo_url)
+
             external_id = self._extract_external_id(row.get("id", ""), href)
             if not external_id:
                 continue
@@ -93,6 +103,7 @@ class SSParser:
                     url=full_url,
                     price=price,
                     city=city,
+                    photo_urls=photo_urls,
                 )
             )
             if len(listings) >= limit:

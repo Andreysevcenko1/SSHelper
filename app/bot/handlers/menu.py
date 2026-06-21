@@ -14,6 +14,7 @@ from app.bot.keyboards.searches import (
     CATEGORY_LABELS,
     after_action_kb,
     error_kb,
+    no_searches_kb,
     search_actions_kb,
     searches_list_kb,
 )
@@ -38,7 +39,7 @@ async def _safe_edit(callback: CallbackQuery, text: str, reply_markup=None) -> N
         await callback.message.edit_text(text, reply_markup=reply_markup)
     except TelegramBadRequest as exc:
         if "message is not modified" not in str(exc).lower():
-            raise
+            logger.debug("_safe_edit failed: %s", exc)
 
 
 def _format_search_details(search, filters: dict, lang: str) -> str:
@@ -51,6 +52,8 @@ def _format_search_details(search, filters: dict, lang: str) -> str:
         get_text("search_detail_status", lang, status=status),
         f"🔗 {display_url}",
     ]
+    if not search.is_active:
+        lines.append(f"\n⚠️ {get_text('err_already_paused', lang)}")
     if filters:
         lines.append(get_text("search_detail_active_filters", lang))
         for k, v in filters.items():
@@ -83,6 +86,24 @@ async def cb_menu_main(
     await callback.answer()
 
 
+@router.callback_query(MenuCB.filter(F.action == "help"))
+async def cb_menu_help(
+    callback: CallbackQuery,
+    session_factory: sessionmaker[Session],
+    state: FSMContext,
+) -> None:
+    await state.clear()
+    user_id = callback.from_user.id if callback.from_user else None
+    tg_lang = callback.from_user.language_code if callback.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
+    await _safe_edit(
+        callback,
+        get_text("help_text", lang),
+        reply_markup=main_menu_kb(lang=lang),
+    )
+    await callback.answer()
+
+
 @router.callback_query(MenuCB.filter(F.action == "searches"))
 async def cb_menu_searches(
     callback: CallbackQuery,
@@ -108,7 +129,7 @@ async def cb_menu_searches(
 
     if not searches:
         text = get_text("no_searches", lang)
-        kb = searches_list_kb([], lang=lang)
+        kb = no_searches_kb(lang=lang)
     else:
         text = get_text("searches_list_header", lang, count=len(searches))
         kb = searches_list_kb(searches, lang=lang)
@@ -167,7 +188,7 @@ async def cb_search_view(
         if search is None or search.user_id != user_id:
             await _safe_edit(
                 callback,
-                get_text("err_search_not_found", lang),
+                get_text("err_search_not_found_id", lang, sid=callback_data.sid),
                 reply_markup=error_kb(lang=lang),
             )
             await callback.answer()
@@ -197,7 +218,9 @@ async def cb_search_pause(
         repo = SearchRepository(session)
         search = repo.get_by_id(callback_data.sid)
         if search is None or search.user_id != user_id:
-            await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
+            await callback.answer(
+                get_text("err_search_not_found_short", lang), show_alert=True
+            )
             return
         if not search.is_active:
             await callback.answer(get_text("err_already_paused", lang), show_alert=True)
@@ -210,7 +233,7 @@ async def cb_search_pause(
     await _safe_edit(
         callback,
         get_text("search_paused", lang, sid=sid),
-        reply_markup=after_action_kb(lang=lang),
+        reply_markup=after_action_kb(search_id=sid, lang=lang),
     )
     await callback.answer()
 
@@ -230,7 +253,9 @@ async def cb_search_resume(
         repo = SearchRepository(session)
         search = repo.get_by_id(callback_data.sid)
         if search is None or search.user_id != user_id:
-            await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
+            await callback.answer(
+                get_text("err_search_not_found_short", lang), show_alert=True
+            )
             return
         if search.is_active:
             await callback.answer(get_text("err_already_active", lang), show_alert=True)
@@ -243,7 +268,7 @@ async def cb_search_resume(
     await _safe_edit(
         callback,
         get_text("search_resumed", lang, sid=sid),
-        reply_markup=after_action_kb(lang=lang),
+        reply_markup=after_action_kb(search_id=sid, lang=lang),
     )
     await callback.answer()
 
@@ -263,12 +288,17 @@ async def cb_search_delete(
         repo = SearchRepository(session)
         search = repo.get_by_id(callback_data.sid)
         if search is None or search.user_id != user_id:
-            await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
+            await callback.answer(
+                get_text("err_search_not_found_short", lang), show_alert=True
+            )
             return
         sid = search.id
         repo.delete_search(search)
     finally:
         session.close()
+
+    from app.bot.keyboards.searches import no_searches_kb
+    from app.bot.keyboards.main import main_menu_kb as _main_kb
 
     await _safe_edit(
         callback,
@@ -293,7 +323,9 @@ async def cb_search_filters(
         repo = SearchRepository(session)
         search = repo.get_by_id(callback_data.sid)
         if search is None or search.user_id != user_id:
-            await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
+            await callback.answer(
+                get_text("err_search_not_found_short", lang), show_alert=True
+            )
             return
         filters = filters_from_json(search.filters_json)
         sid = search.id

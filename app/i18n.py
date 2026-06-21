@@ -23,39 +23,15 @@ _T: dict[str, dict[str, str]] = {
         "lv": (
             "👋 Sveiki! Es esmu <b>SSHelper</b> — bots SS.lv sludinājumu "
             "uzraudzībai.\n\n"
-            "<b>Pieejamās komandas:</b>\n"
-            "/add &lt;saite&gt; — pievienot meklējumu\n"
-            "/list — jūsu meklējumu saraksts\n"
-            "/pause &lt;ID&gt; — apturēt meklējumu\n"
-            "/resume &lt;ID&gt; — atsākt meklējumu\n"
-            "/delete &lt;ID&gt; — dzēst meklējumu\n"
-            "/filters &lt;ID&gt; — meklējuma filtri\n"
-            "/lang — mainīt valodu\n\n"
-            "Vai izmantojiet pogas zemāk:"
+            "Izmantojiet pogas zemāk, lai pārvaldītu savus meklējumus:"
         ),
         "ru": (
             "👋 Привет! Я <b>SSHelper</b> — бот для мониторинга объявлений на SS.lv.\n\n"
-            "<b>Доступные команды:</b>\n"
-            "/add &lt;ссылка&gt; — добавить поиск\n"
-            "/list — список ваших поисков\n"
-            "/pause &lt;ID&gt; — приостановить поиск\n"
-            "/resume &lt;ID&gt; — возобновить поиск\n"
-            "/delete &lt;ID&gt; — удалить поиск\n"
-            "/filters &lt;ID&gt; — фильтры поиска\n"
-            "/lang — сменить язык\n\n"
-            "Или используйте кнопки меню ниже:"
+            "Используйте кнопки ниже для управления поисками:"
         ),
         "en": (
             "👋 Hello! I am <b>SSHelper</b> — a bot for monitoring listings on SS.lv.\n\n"
-            "<b>Available commands:</b>\n"
-            "/add &lt;url&gt; — add a search\n"
-            "/list — your searches\n"
-            "/pause &lt;ID&gt; — pause a search\n"
-            "/resume &lt;ID&gt; — resume a search\n"
-            "/delete &lt;ID&gt; — delete a search\n"
-            "/filters &lt;ID&gt; — search filters\n"
-            "/lang — change language\n\n"
-            "Or use the menu buttons below:"
+            "Use the buttons below to manage your searches:"
         ),
     },
     # ------------------------------------------------------------------ #
@@ -84,10 +60,20 @@ _T: dict[str, dict[str, str]] = {
         "ru": "🌐 Valoda / Language",
         "en": "🌐 Valoda / Language",
     },
+    "btn_help": {
+        "lv": "ℹ️ Palīdzība",
+        "ru": "ℹ️ Помощь",
+        "en": "ℹ️ Help",
+    },
     "btn_back_to_menu": {
         "lv": "🏠 Uz izvēlni",
         "ru": "🏠 В меню",
         "en": "🏠 Main menu",
+    },
+    "btn_back": {
+        "lv": "🔙 Atpakaļ",
+        "ru": "🔙 Назад",
+        "en": "🔙 Back",
     },
     "btn_my_searches_short": {
         "lv": "📋 Mani meklējumi",
@@ -100,14 +86,19 @@ _T: dict[str, dict[str, str]] = {
         "en": "➕ Add another",
     },
     "btn_open_filters": {
-        "lv": "🔍 Atvērt filtrus",
-        "ru": "🔍 Открыть фильтры",
-        "en": "🔍 Open filters",
+        "lv": "⚙️ Filtri",
+        "ru": "⚙️ Фильтры",
+        "en": "⚙️ Filters",
     },
     "btn_back_to_search": {
-        "lv": "◀️ Atpakaļ uz meklējumu",
-        "ru": "◀️ Назад к поиску",
-        "en": "◀️ Back to search",
+        "lv": "🔙 Atpakaļ uz meklējumu",
+        "ru": "🔙 Назад к поиску",
+        "en": "🔙 Back to search",
+    },
+    "btn_back_to_list": {
+        "lv": "🔙 Uz sarakstu",
+        "ru": "🔙 К списку",
+        "en": "🔙 Back to list",
     },
     "btn_pause": {
         "lv": "⏸ Pauze",
@@ -125,24 +116,29 @@ _T: dict[str, dict[str, str]] = {
         "en": "🗑 Delete",
     },
     "btn_filters": {
-        "lv": "🔍 Filtri",
-        "ru": "🔍 Фильтры",
-        "en": "🔍 Filters",
+        "lv": "⚙️ Filtri",
+        "ru": "⚙️ Фильтры",
+        "en": "⚙️ Filters",
     },
     "btn_show_filters": {
-        "lv": "📋 Rādīt filtrus",
-        "ru": "📋 Показать фильтры",
-        "en": "📋 Show filters",
+        "lv": "👁 Rādīt filtrus",
+        "ru": "👁 Показать фильтры",
+        "en": "👁 Show filters",
     },
     "btn_edit_filter": {
-        "lv": "✏️ Mainīt / pievienot filtru",
-        "ru": "✏️ Изменить / добавить фильтр",
-        "en": "✏️ Edit / add filter",
+        "lv": "✏️ Mainīt filtru",
+        "ru": "✏️ Изменить фильтр",
+        "en": "✏️ Edit filter",
+    },
+    "btn_del_filter": {
+        "lv": "➖ Dzēst filtru",
+        "ru": "➖ Удалить фильтр",
+        "en": "➖ Delete filter",
     },
     "btn_clear_filters": {
-        "lv": "🗑 Notīrīt visus filtrus",
-        "ru": "🗑 Очистить все фильтры",
-        "en": "🗑 Clear all filters",
+        "lv": "♻️ Notīrīt visus filtrus",
+        "ru": "♻️ Очистить фильтры",
+        "en": "♻️ Clear filters",
     },
     "btn_cancel": {
         "lv": "❌ Atcelt",
@@ -176,6 +172,56 @@ _T: dict[str, dict[str, str]] = {
         "lv": "✅ Valoda mainīta uz <b>Latviešu</b>.",
         "ru": "✅ Язык изменён на <b>Русский</b>.",
         "en": "✅ Language changed to <b>English</b>.",
+    },
+    # ------------------------------------------------------------------ #
+    # Help screen                                                          #
+    # ------------------------------------------------------------------ #
+    "help_text": {
+        "lv": (
+            "ℹ️ <b>Palīdzība</b>\n\n"
+            "SSHelper uzrauga SS.lv meklēšanas lapas un paziņo par jauniem "
+            "sludinājumiem.\n\n"
+            "<b>Kā sākt:</b>\n"
+            "1. Nospiediet <b>➕ Pievienot meklējumu</b>\n"
+            "2. Nosūtiet SS.lv meklēšanas lapas saiti\n"
+            "3. Saņemiet paziņojumus par jauniem sludinājumiem\n\n"
+            "<b>Meklējumu pārvaldība:</b>\n"
+            "Atveriet <b>📋 Mani meklējumi</b>, atlasiet meklējumu un "
+            "izmantojiet kontekstuālās pogas.\n\n"
+            "<b>Filtri:</b>\n"
+            "Katram meklējumam varat iestatīt filtrus (cena, pilsēta u.c.), "
+            "izmantojot pogu <b>⚙️ Filtri</b> meklējuma kartītē."
+        ),
+        "ru": (
+            "ℹ️ <b>Помощь</b>\n\n"
+            "SSHelper отслеживает страницы поиска SS.lv и уведомляет о новых "
+            "объявлениях.\n\n"
+            "<b>Как начать:</b>\n"
+            "1. Нажмите <b>➕ Добавить поиск</b>\n"
+            "2. Отправьте ссылку на страницу поиска SS.lv\n"
+            "3. Получайте уведомления о новых объявлениях\n\n"
+            "<b>Управление поисками:</b>\n"
+            "Откройте <b>📋 Мои поиски</b>, выберите поиск и используйте "
+            "контекстные кнопки.\n\n"
+            "<b>Фильтры:</b>\n"
+            "Для каждого поиска можно настроить фильтры (цена, город и т.д.) "
+            "через кнопку <b>⚙️ Фильтры</b> в карточке поиска."
+        ),
+        "en": (
+            "ℹ️ <b>Help</b>\n\n"
+            "SSHelper monitors SS.lv search pages and notifies you about new "
+            "listings.\n\n"
+            "<b>Getting started:</b>\n"
+            "1. Press <b>➕ Add search</b>\n"
+            "2. Send a link to an SS.lv search page\n"
+            "3. Receive notifications about new listings\n\n"
+            "<b>Managing searches:</b>\n"
+            "Open <b>📋 My searches</b>, select a search and use the context "
+            "buttons.\n\n"
+            "<b>Filters:</b>\n"
+            "You can configure filters (price, city, etc.) for each search "
+            "using the <b>⚙️ Filters</b> button in the search card."
+        ),
     },
     # ------------------------------------------------------------------ #
     # Search list                                                          #
@@ -323,6 +369,11 @@ _T: dict[str, dict[str, str]] = {
         "ru": "❌ Поиск не найден.",
         "en": "❌ Search not found.",
     },
+    "err_search_not_found_id": {
+        "lv": "❌ Meklējums ar ID {sid} nav atrasts.\n\nPārbaudiet sarakstu un mēģiniet vēlreiz.",
+        "ru": "❌ Поиск с ID {sid} не найден.\n\nПроверьте список и попробуйте снова.",
+        "en": "❌ Search with ID {sid} not found.\n\nCheck the list and try again.",
+    },
     "err_already_paused": {
         "lv": "⏸ Meklējums jau ir pauzēts.",
         "ru": "⏸ Поиск уже на паузе.",
@@ -383,10 +434,47 @@ _T: dict[str, dict[str, str]] = {
         "ru": "⚠️ Фильтр `{field}` не найден",
         "en": "⚠️ Filter `{field}` not found",
     },
+    "err_filter_key_not_found": {
+        "lv": (
+            "❌ Filtrs <code>{key}</code> neeksistē šim meklējumam.\n\n"
+            "Izmantojiet 👁 Rādīt filtrus, lai redzētu esošos filtrus."
+        ),
+        "ru": (
+            "❌ Фильтр <code>{key}</code> не существует для этого поиска.\n\n"
+            "Используйте 👁 Показать фильтры, чтобы увидеть текущие фильтры."
+        ),
+        "en": (
+            "❌ Filter <code>{key}</code> does not exist for this search.\n\n"
+            "Use 👁 Show filters to see the current filters."
+        ),
+    },
     "err_filter_schema": {
-        "lv": "⚠️ Nevarēja iegūt lauku sarakstu",
-        "ru": "⚠️ Не удалось получить список полей",
-        "en": "⚠️ Could not retrieve the list of fields",
+        "lv": (
+            "⚠️ Nevarēja iegūt filtru sarakstu.\n\n"
+            "Iespējams, SS.lv nav pieejams. Mēģiniet vēlreiz vēlāk."
+        ),
+        "ru": (
+            "⚠️ Не удалось получить список фильтров.\n\n"
+            "Возможно, SS.lv недоступен. Попробуйте снова позже."
+        ),
+        "en": (
+            "⚠️ Could not retrieve the filter list.\n\n"
+            "SS.lv may be unavailable. Please try again later."
+        ),
+    },
+    "err_no_filters_set": {
+        "lv": (
+            "ℹ️ Šim meklējumam nav saglabātu filtru.\n\n"
+            "Vispirms pievienojiet filtru, izmantojot ✏️ Mainīt filtru."
+        ),
+        "ru": (
+            "ℹ️ У этого поиска нет сохранённых фильтров.\n\n"
+            "Сначала добавьте фильтр с помощью ✏️ Изменить фильтр."
+        ),
+        "en": (
+            "ℹ️ This search has no saved filters.\n\n"
+            "First add a filter using ✏️ Edit filter."
+        ),
     },
     "err_search_already_exists_pause": {
         "lv": "Meklējums #{sid} jau ir pauzēts.",
@@ -397,6 +485,20 @@ _T: dict[str, dict[str, str]] = {
         "lv": "Meklējums #{sid} jau ir aktīvs.",
         "ru": "Поиск #{sid} уже активен.",
         "en": "Search #{sid} is already active.",
+    },
+    "err_network": {
+        "lv": (
+            "⚠️ Nevarēja sazināties ar SS.lv.\n\n"
+            "Tas ir īslaicīgs tīkla kļūda. Mēģiniet vēlreiz pēc brīža."
+        ),
+        "ru": (
+            "⚠️ Не удалось связаться с SS.lv.\n\n"
+            "Это временная сетевая ошибка. Попробуйте снова через некоторое время."
+        ),
+        "en": (
+            "⚠️ Could not reach SS.lv.\n\n"
+            "This is a temporary network error. Please try again shortly."
+        ),
     },
     # ------------------------------------------------------------------ #
     # Add search: results                                                  #
@@ -423,24 +525,34 @@ _T: dict[str, dict[str, str]] = {
     # Watcher notifications                                                #
     # ------------------------------------------------------------------ #
     "new_listing": {
-        "lv": "🔔 Jauns sludinājums (meklējums #{sid}):",
-        "ru": "🔔 Новое объявление (поиск #{sid}):",
-        "en": "🔔 New listing (search #{sid}):",
+        "lv": "🔔 <b>Jauns sludinājums!</b>",
+        "ru": "🔔 <b>Новое объявление!</b>",
+        "en": "🔔 <b>New listing!</b>",
+    },
+    "notification_search_label": {
+        "lv": "📋 Meklējums #{sid}",
+        "ru": "📋 Поиск #{sid}",
+        "en": "📋 Search #{sid}",
     },
     "listing_title": {
-        "lv": "Nosaukums: {title}",
-        "ru": "Название: {title}",
-        "en": "Title: {title}",
+        "lv": "<b>{title}</b>",
+        "ru": "<b>{title}</b>",
+        "en": "<b>{title}</b>",
     },
     "listing_price": {
-        "lv": "Cena: {price}",
-        "ru": "Цена: {price}",
-        "en": "Price: {price}",
+        "lv": "💰 {price}",
+        "ru": "💰 {price}",
+        "en": "💰 {price}",
     },
     "listing_city": {
-        "lv": "Pilsēta: {city}",
-        "ru": "Город: {city}",
-        "en": "City: {city}",
+        "lv": "📍 {city}",
+        "ru": "📍 {city}",
+        "en": "📍 {city}",
+    },
+    "listing_link": {
+        "lv": "🔗 Atvērt sludinājumu",
+        "ru": "🔗 Открыть объявление",
+        "en": "🔗 Open listing",
     },
 }
 
