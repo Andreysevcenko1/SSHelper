@@ -1,6 +1,57 @@
 import hashlib
 import json
+import re
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+# ---------------------------------------------------------------------------
+# SS.lv raw-key patterns used for human-readable display labels
+# ---------------------------------------------------------------------------
+_RE_OPT = re.compile(r"^(?:topt|opt)\[(\d*)\]$", re.IGNORECASE)
+_RE_MID = re.compile(r"^mid\[(\d*)\]$", re.IGNORECASE)
+_RE_PRICE_MIN = re.compile(r"^(?:pr_?min|price_?(?:min|from))$", re.IGNORECASE)
+_RE_PRICE_MAX = re.compile(r"^(?:pr_?max|price_?(?:max|to))$", re.IGNORECASE)
+
+
+def filter_display_label(key: str, schema: dict | None = None) -> str:
+    """Return a human-readable display label for a raw SS.lv filter key.
+
+    Priority:
+    1. ``schema[key]["label"]`` when schema is provided.
+    2. Pattern-based fallbacks for common SS.lv key shapes
+       (``opt[N]``, ``topt[N]``, ``mid[N]``, ``pr_min``, ``pr_max``).
+    3. Generic cleanup: remove brackets, replace underscores with spaces.
+
+    The raw key is **never** returned as-is when it looks like an SS.lv
+    internal parameter (i.e. contains ``[`` or ``]``).
+    """
+    # 1. Schema lookup
+    if schema:
+        info = schema.get(key)
+        if info:
+            lbl = (info.get("label") or "").strip()
+            if lbl:
+                return lbl
+
+    # 2. Pattern-based fallbacks
+    if _RE_PRICE_MIN.match(key):
+        return "Цена от"
+    if _RE_PRICE_MAX.match(key):
+        return "Цена до"
+
+    m = _RE_OPT.match(key)
+    if m:
+        n = m.group(1)
+        return f"Фильтр {n}" if n else "Фильтр"
+
+    m = _RE_MID.match(key)
+    if m:
+        n = m.group(1)
+        return f"Район {n}" if n else "Район"
+
+    # 3. Generic cleanup: drop brackets, underscores → spaces
+    cleaned = re.sub(r"[\[\]]", "", key).replace("_", " ").strip()
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned or key
 
 
 def extract_filters_from_url(url: str) -> dict[str, str | list[str]]:

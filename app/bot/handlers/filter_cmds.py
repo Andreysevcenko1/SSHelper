@@ -29,7 +29,7 @@ from app.bot.states import EditFilterFSM
 from app.bot.utils import try_delete_message
 from app.db.repo import SearchRepository
 from app.i18n import get_text
-from app.services.filters import filters_from_json
+from app.services.filters import filters_from_json, filter_display_label
 from app.services.ss_parser import SSParser
 
 logger = logging.getLogger(__name__)
@@ -71,6 +71,11 @@ def _field_by_idx(schema: dict, fidx: int) -> tuple[str, dict] | tuple[None, Non
         key = sorted_keys[fidx]
         return key, schema[key]
     return None, None
+
+
+def _filters_lines(filters: dict, schema: dict | None = None) -> list[str]:
+    """Format filters as bullet lines using human-readable display labels."""
+    return [f"  • {filter_display_label(k, schema)}: {v}" for k, v in filters.items()]
 
 
 async def _safe_edit(callback: CallbackQuery, text: str, reply_markup=None) -> None:
@@ -132,7 +137,7 @@ async def cmd_filters(
         session.close()
 
     content = (
-        "\n".join(f"  • {k}: {v}" for k, v in filters.items())
+        "\n".join(_filters_lines(filters))
         if filters
         else get_text("filters_none", lang)
     )
@@ -191,7 +196,7 @@ async def cmd_setfilter(
         session.close()
 
     await message.answer(
-        f"✅ <b>{field}</b> = <b>{value}</b> → #{sid}",
+        f"✅ <b>{filter_display_label(field)}</b> = <b>{value}</b> → #{sid}",
         reply_markup=after_filter_kb(sid, lang=lang),
     )
 
@@ -353,7 +358,7 @@ async def cb_filter_show(
         )
     else:
         lines = [get_text("filters_header", lang, sid=sid, content="")]
-        lines += [f"  • {k}: {v}" for k, v in filters.items()]
+        lines += _filters_lines(filters)
         await _safe_edit(
             callback,
             "\n".join(lines),
@@ -393,7 +398,7 @@ async def cb_filter_del_start(
             reply_markup=no_filters_kb(sid, lang=lang),
         )
     else:
-        content = "\n".join(f"  • {k}: {v}" for k, v in filters.items())
+        content = "\n".join(_filters_lines(filters))
         text = get_text("filters_header", lang, sid=sid, content=content)
         await _safe_edit(callback, text, reply_markup=filter_items_kb(sid, filters, lang=lang))
 
@@ -519,7 +524,7 @@ async def cb_filter_delete_key(
         return
 
     if filters:
-        content = "\n".join(f"  • {k}: {v}" for k, v in filters.items())
+        content = "\n".join(_filters_lines(filters))
         text = get_text("filters_header", lang, sid=sid, content=content)
         await _safe_edit(callback, text, reply_markup=filter_items_kb(sid, filters, lang=lang))
     else:
