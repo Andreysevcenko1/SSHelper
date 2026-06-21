@@ -63,7 +63,7 @@ async def run() -> None:
     dp.include_router(get_main_router())
 
     parser = SSParser()
-    watcher = WatcherService(session_factory=session_factory, parser=parser, bot=bot)
+    watcher = WatcherService(session_factory=session_factory, parser=parser, bot=bot, config=config)
 
     scheduler = AsyncIOScheduler()
     scheduler.add_job(watcher.check_all, trigger="interval", seconds=config.poll_interval_seconds)
