@@ -22,19 +22,19 @@ class Listing:
 _ID_RE = re.compile(r"(\d{5,})")
 
 _CATEGORY_MAP = {
-    "/transport/": "Транспорт",
-    "/real-estate/": "Недвижимость",
-    "/animals/": "Животные",
-    "/electronics/": "Электроника",
-    "/services/": "Услуги",
-    "/other/": "Прочее",
-    "/clothing/": "Одежда",
-    "/garden/": "Сад и огород",
-    "/food/": "Еда",
-    "/sport/": "Спорт",
-    "/business/": "Бизнес",
-    "/collect/": "Коллекционирование",
-    "/household/": "Дом и быт",
+    "/transport/": "transport",
+    "/real-estate/": "real-estate",
+    "/animals/": "animals",
+    "/electronics/": "electronics",
+    "/services/": "services",
+    "/other/": "other",
+    "/clothing/": "clothing",
+    "/garden/": "garden",
+    "/food/": "food",
+    "/sport/": "sport",
+    "/business/": "business",
+    "/collect/": "collect",
+    "/household/": "household",
 }
 
 
@@ -43,7 +43,7 @@ def detect_category(url: str) -> str:
     for segment, label in _CATEGORY_MAP.items():
         if segment in url_lower:
             return label
-    return "SS.lv"
+    return "ss.lv"
 
 
 class SSParser:

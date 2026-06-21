@@ -11,11 +11,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.bot.handlers.common import get_user_lang
 from app.bot.keyboards.filters import cancel_kb
-from app.bot.keyboards.searches import after_add_kb, CATEGORY_LABELS
+from app.bot.keyboards.searches import after_add_kb
 from app.bot.states import AddSearchFSM
 from app.bot.utils import try_delete_message
 from app.db.repo import SearchRepository
-from app.i18n import get_text
+from app.i18n import get_text, translate_category
 from app.services.filters import (
     base_url_without_query,
     build_effective_url,
@@ -222,7 +222,7 @@ async def _process_add_url(
     finally:
         session.close()
 
-    category_label = CATEGORY_LABELS.get(category, category)
+    category_label = translate_category(category, lang)
     lines = [
         f"✅ <b>#{search_id}</b> — {category_label}",
         f"🔗 {eff_url}",

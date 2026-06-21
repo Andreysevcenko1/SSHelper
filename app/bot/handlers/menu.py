@@ -11,7 +11,6 @@ from app.bot.callbacks import MenuCB, SearchCB
 from app.bot.handlers.common import get_user_lang
 from app.bot.keyboards.main import main_menu_kb
 from app.bot.keyboards.searches import (
-    CATEGORY_LABELS,
     after_action_kb,
     error_kb,
     no_searches_kb,
@@ -21,7 +20,7 @@ from app.bot.keyboards.searches import (
 from app.bot.keyboards.filters import filters_menu_kb
 from app.bot.states import AddSearchFSM
 from app.db.repo import SearchRepository
-from app.i18n import get_text
+from app.i18n import get_text, translate_category
 from app.services.filters import filters_from_json
 
 logger = logging.getLogger(__name__)
@@ -43,7 +42,7 @@ async def _safe_edit(callback: CallbackQuery, text: str, reply_markup=None) -> N
 
 
 def _format_search_details(search, filters: dict, lang: str) -> str:
-    category_label = CATEGORY_LABELS.get(search.title, search.title)
+    category_label = translate_category(search.title, lang)
     status = get_text("status_active" if search.is_active else "status_paused", lang)
     display_url = search.effective_url or search.url
     lines = [

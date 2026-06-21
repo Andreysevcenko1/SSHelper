@@ -13,7 +13,7 @@ from app.bot.keyboards.searches import (
     searches_list_kb,
 )
 from app.db.repo import SearchRepository
-from app.i18n import get_text
+from app.i18n import get_text, translate_category
 from app.services.filters import filters_from_json
 from app.bot.utils import try_delete_message
 
@@ -54,9 +54,8 @@ async def cmd_list(message: Message, session_factory: sessionmaker[Session]) -> 
 
     lines = [get_text("list_header", lang, count=len(searches))]
     for s in searches:
-        from app.bot.keyboards.searches import CATEGORY_LABELS
         status = get_text("status_active" if s.is_active else "status_paused", lang)
-        category_label = CATEGORY_LABELS.get(s.title, s.title)
+        category_label = translate_category(s.title, lang)
         display_url = s.effective_url or s.url
         entry = f"#{s.id} — {category_label} [{status}]\n🔗 {display_url}"
         filters = filters_from_json(s.filters_json)

@@ -558,6 +558,83 @@ _T: dict[str, dict[str, str]] = {
 
 
 # ---------------------------------------------------------------------------
+# Category translations
+# ---------------------------------------------------------------------------
+
+# Canonical key → emoji icon
+_CATEGORY_ICONS: dict[str, str] = {
+    "transport": "🚗",
+    "real-estate": "🏠",
+    "animals": "🐾",
+    "electronics": "💻",
+    "services": "🔧",
+    "other": "📦",
+    "clothing": "👗",
+    "garden": "🌱",
+    "food": "🍎",
+    "sport": "⚽",
+    "business": "💼",
+    "collect": "🏺",
+    "household": "🏡",
+    "ss.lv": "📋",
+}
+
+# Canonical key → {lang: localized name}
+_CATEGORY_NAMES: dict[str, dict[str, str]] = {
+    "transport":    {"lv": "Transports",           "ru": "Транспорт",           "en": "Transport"},
+    "real-estate":  {"lv": "Nekustamais īpašums",  "ru": "Недвижимость",        "en": "Real estate"},
+    "animals":      {"lv": "Dzīvnieki",            "ru": "Животные",            "en": "Animals"},
+    "electronics":  {"lv": "Elektronika",           "ru": "Электроника",         "en": "Electronics"},
+    "services":     {"lv": "Pakalpojumi",           "ru": "Услуги",              "en": "Services"},
+    "other":        {"lv": "Cits",                  "ru": "Прочее",              "en": "Other"},
+    "clothing":     {"lv": "Apģērbs",              "ru": "Одежда",              "en": "Clothing"},
+    "garden":       {"lv": "Dārzs",                "ru": "Сад и огород",        "en": "Garden"},
+    "food":         {"lv": "Pārtika",              "ru": "Еда",                 "en": "Food"},
+    "sport":        {"lv": "Sports",               "ru": "Спорт",               "en": "Sports"},
+    "business":     {"lv": "Bizness",              "ru": "Бизнес",              "en": "Business"},
+    "collect":      {"lv": "Kolekcionēšana",       "ru": "Коллекционирование",  "en": "Collectibles"},
+    "household":    {"lv": "Māja un sadzīve",      "ru": "Дом и быт",           "en": "Household"},
+    "ss.lv":        {"lv": "SS.lv",                "ru": "SS.lv",               "en": "SS.lv"},
+}
+
+# Reverse mapping: old Russian names (legacy DB values) → canonical key
+_LEGACY_CATEGORY_MAP: dict[str, str] = {
+    names["ru"]: key
+    for key, names in _CATEGORY_NAMES.items()
+    if "ru" in names
+}
+
+
+def translate_category(category_key: str, lang: str) -> str:
+    """Return a localised category label with emoji for the given *lang*.
+
+    *category_key* is the canonical key stored in ``Search.title`` (e.g.
+    ``"transport"``) **or** a legacy Russian name from older DB records
+    (e.g. ``"Транспорт"``).
+
+    Examples::
+
+        translate_category("transport", "ru")  → "🚗 Транспорт"
+        translate_category("transport", "lv")  → "🚗 Transports"
+        translate_category("transport", "en")  → "🚗 Transport"
+        translate_category("unknown_key", "en") → "📋 unknown_key"
+    """
+    lang = lang if lang in SUPPORTED_LANGS else DEFAULT_LANG
+
+    # Resolve legacy Russian names to canonical keys
+    resolved_key = _LEGACY_CATEGORY_MAP.get(category_key, category_key)
+
+    icon = _CATEGORY_ICONS.get(resolved_key, "📋")
+    names = _CATEGORY_NAMES.get(resolved_key)
+    if names:
+        name = names.get(lang) or names.get(DEFAULT_LANG) or resolved_key
+    else:
+        # Unknown category: show as-is without mixing languages
+        name = category_key
+    return f"{icon} {name}"
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 

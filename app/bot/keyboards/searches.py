@@ -2,51 +2,18 @@ from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.bot.callbacks import MenuCB, SearchCB
-from app.i18n import get_text
+from app.i18n import get_text, translate_category
 
-CATEGORY_LABELS: dict[str, str] = {
-    "Транспорт": "🚗 Транспорт",
-    "Недвижимость": "🏠 Недвижимость",
-    "Животные": "🐾 Животные",
-    "Электроника": "💻 Электроника",
-    "Услуги": "🔧 Услуги",
-    "Прочее": "📦 Прочее",
-    "Одежда": "👗 Одежда",
-    "Сад и огород": "🌱 Сад и огород",
-    "Еда": "🍎 Еда",
-    "Спорт": "⚽ Спорт",
-    "Бизнес": "💼 Бизнес",
-    "Коллекционирование": "🏺 Коллекционирование",
-    "Дом и быт": "🏡 Дом и быт",
-    "SS.lv": "📋 SS.lv",
-}
-
-CATEGORY_ICONS: dict[str, str] = {
-    "Транспорт": "🚗",
-    "Недвижимость": "🏠",
-    "Животные": "🐾",
-    "Электроника": "💻",
-    "Услуги": "🔧",
-    "Прочее": "📦",
-    "Одежда": "👗",
-    "Сад и огород": "🌱",
-    "Еда": "🍎",
-    "Спорт": "⚽",
-    "Бизнес": "💼",
-    "Коллекционирование": "🏺",
-    "Дом и быт": "🏡",
-    "SS.lv": "📋",
-}
 
 
 def searches_list_kb(searches: list, lang: str = "lv") -> InlineKeyboardMarkup:
     """List of user searches with tap-to-view action."""
     b = InlineKeyboardBuilder()
     for s in searches:
-        icon = CATEGORY_ICONS.get(s.title, "📋")
+        cat_label = translate_category(s.title, lang)
         state_icon = "▶️" if s.is_active else "⏸"
         b.button(
-            text=f"{state_icon} {icon} #{s.id} — {s.title}",
+            text=f"{state_icon} #{s.id} — {cat_label}",
             callback_data=SearchCB(action="view", sid=s.id),
         )
     b.button(text=get_text("btn_add_search", lang), callback_data=MenuCB(action="add_start"))
