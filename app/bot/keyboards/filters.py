@@ -11,6 +11,7 @@ from app.bot.callbacks import (
     SearchCB,
 )
 from app.i18n import get_text
+from app.services.filters import filter_display_label
 
 _PAGE_SIZE_FIELDS = 8
 _PAGE_SIZE_OPTS = 8
@@ -45,11 +46,17 @@ def filters_menu_kb(search_id: int, has_filters: bool, lang: str = "lv") -> Inli
     return b.as_markup()
 
 
-def filter_items_kb(search_id: int, filters: dict, lang: str = "lv") -> InlineKeyboardMarkup:
+def filter_items_kb(
+    search_id: int,
+    filters: dict,
+    lang: str = "lv",
+    schema: dict | None = None,
+) -> InlineKeyboardMarkup:
     """Shows current active filters, each with a 🗑 delete button."""
     b = InlineKeyboardBuilder()
     for key, value in filters.items():
-        display = f"{key} = {value}"
+        label = filter_display_label(key, schema)
+        display = f"{label} = {value}"
         if len(display) > 32:
             display = display[:30] + "…"
         # Truncate key to 40 chars for callback safety
