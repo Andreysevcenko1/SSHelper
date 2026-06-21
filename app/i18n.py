@@ -372,6 +372,27 @@ _T: dict[str, dict[str, str]] = {
         "ru": "Район",
         "en": "District",
     },
+    # Range (min/max) labels for topt[<id>][min|max] keys
+    "filter_lbl_topt_price_min": {
+        "lv": "Cena: no",
+        "ru": "Цена: от",
+        "en": "Price: from",
+    },
+    "filter_lbl_topt_price_max": {
+        "lv": "Cena: līdz",
+        "ru": "Цена: до",
+        "en": "Price: to",
+    },
+    "filter_lbl_range_min": {
+        "lv": "no",
+        "ru": "от",
+        "en": "from",
+    },
+    "filter_lbl_range_max": {
+        "lv": "līdz",
+        "ru": "до",
+        "en": "to",
+    },
     # ------------------------------------------------------------------ #
     # Errors                                                               #
     # ------------------------------------------------------------------ #
