@@ -46,6 +46,18 @@ def _migrate_sqlite(engine) -> None:
                         text(f"ALTER TABLE user_settings ADD COLUMN {col_name} {col_type}")
                     )
 
+        # Ensure broadcast_sent table exists (created by create_all above, but
+        # guard for databases that pre-date this migration).
+        result = conn.execute(text("PRAGMA table_info(broadcast_sent)"))
+        bs_existing = {row[1] for row in result}
+        if not bs_existing:
+            logger.info("Migration: creating broadcast_sent table")
+            conn.execute(text(
+                "CREATE TABLE IF NOT EXISTS broadcast_sent "
+                "(external_id TEXT PRIMARY KEY NOT NULL, "
+                "sent_at DATETIME NOT NULL)"
+            ))
+
         conn.commit()
 
 
@@ -64,3 +76,4 @@ def get_session(session_factory: sessionmaker[Session]) -> Generator[Session, No
         yield session
     finally:
         session.close()
+

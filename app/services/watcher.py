@@ -1,10 +1,12 @@
 import logging
+import unicodedata
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db.repo import SearchRepository, UserSettingsRepository
+from app.config import Config
+from app.db.repo import BroadcastRepository, SearchRepository, UserSettingsRepository
 from app.i18n import get_text, resolve_lang
 from app.services.ss_parser import Listing, SSParser
 
@@ -13,11 +15,104 @@ logger = logging.getLogger(__name__)
 _MAX_PHOTOS_PER_NOTIFICATION = 3
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Routing helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _normalize(text: str) -> str:
+    """Lowercase and strip diacritics (ā→a, ī→i, ū→u, etc.)."""
+    nfkd = unicodedata.normalize("NFKD", text.lower())
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+
+_RENT_KEYWORDS = {
+    "ire", "rent", "dzivoklu ire", "dzivoklis ire", "nomai", "iznoma",
+    "hand_over",  # SS.lv URL segment for rental
+}
+_SALE_KEYWORDS = {
+    "pardosana", "sale", "dzivoklu pardosana", "pirkt",
+    "sell",  # SS.lv URL segment for sale
+}
+_AUTO_KEYWORDS = {
+    "auto", "cars", "transport", "masinas", "automobili",
+}
+_RIGA_KEYWORDS = {"riga"}
+
+
+def _is_riga(city: str | None, url: str) -> bool:
+    """Return True if the listing appears to be in Rīga."""
+    sources = []
+    if city:
+        sources.append(_normalize(city))
+    sources.append(_normalize(url))
+    return any(kw in src for src in sources for kw in _RIGA_KEYWORDS)
+
+
+def _detect_topic(search_url: str, listing: "Listing", config: Config) -> int:
+    """Return the Telegram message_thread_id for *listing* based on routing rules.
+
+    Routing priority:
+      1. Rīga + apartment rent  → THREAD_IRE_RIGA
+      2. Rīga + apartment sale  → THREAD_SELL_RIGA
+      3. Rīga + auto            → THREAD_AUTO_RIGA
+      4. everything else        → THREAD_OTHER_CITIES
+    """
+    url_norm = _normalize(search_url)
+    title_norm = _normalize(listing.title or "")
+    combined = f"{url_norm} {title_norm}"
+
+    is_riga = _is_riga(listing.city, search_url)
+
+    is_rent = any(kw in combined for kw in _RENT_KEYWORDS)
+    is_sale = any(kw in combined for kw in _SALE_KEYWORDS)
+    is_auto = any(kw in combined for kw in _AUTO_KEYWORDS)
+
+    if is_riga and is_rent:
+        thread_id = config.thread_ire_riga
+        reason = "Rīga + rent"
+    elif is_riga and is_sale:
+        thread_id = config.thread_sell_riga
+        reason = "Rīga + sale"
+    elif is_riga and is_auto:
+        thread_id = config.thread_auto_riga
+        reason = "Rīga + auto"
+    else:
+        thread_id = config.thread_other_cities
+        reason = "other"
+
+    logger.debug(
+        "Broadcast routing: listing %s → thread %s (%s)",
+        listing.external_id, thread_id, reason,
+    )
+    # thread_id is guaranteed non-None when broadcast_enabled (validated in load_config)
+    return thread_id  # type: ignore[return-value]
+
+
 class WatcherService:
-    def __init__(self, session_factory: sessionmaker[Session], parser: SSParser, bot: Bot) -> None:
+    def __init__(
+        self,
+        session_factory: sessionmaker[Session],
+        parser: SSParser,
+        bot: Bot,
+        config: Config | None = None,
+    ) -> None:
         self.session_factory = session_factory
         self.parser = parser
         self.bot = bot
+        self.config = config
+
+        if config and config.broadcast_enabled:
+            logger.info(
+                "Broadcast enabled: chat_id=%s threads=(ire_riga=%s, sell_riga=%s, "
+                "auto_riga=%s, other=%s)",
+                config.broadcast_chat_id,
+                config.thread_ire_riga,
+                config.thread_sell_riga,
+                config.thread_auto_riga,
+                config.thread_other_cities,
+            )
+        else:
+            logger.info("Broadcast disabled — DM-only mode")
 
     async def check_all(self) -> None:
         session = self.session_factory()
@@ -98,6 +193,45 @@ class WatcherService:
                     search.id, exc,
                 )
 
+            # Group broadcast (feature-flagged, deduped per external_id)
+            if self.config and self.config.broadcast_enabled:
+                await self._maybe_broadcast(search_url=search.effective_url or search.url, listing=listing)
+
+    async def _maybe_broadcast(self, search_url: str, listing: Listing) -> None:
+        """Send *listing* to the group forum topic if not already sent."""
+        assert self.config is not None  # guaranteed by caller
+
+        session = self.session_factory()
+        try:
+            bc_repo = BroadcastRepository(session)
+            if bc_repo.already_sent(listing.external_id):
+                logger.debug(
+                    "Broadcast dedupe: skipping %s (already sent)", listing.external_id
+                )
+                return
+
+            thread_id = _detect_topic(search_url, listing, self.config)
+
+            try:
+                await self._send_group_notification(
+                    chat_id=self.config.broadcast_chat_id,  # type: ignore[arg-type]
+                    thread_id=thread_id,
+                    listing=listing,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Broadcast: failed to send listing %s to thread %s — %s",
+                    listing.external_id, thread_id, exc,
+                )
+                return
+
+            # Only mark as sent after a successful delivery
+            sent = bc_repo.mark_sent(listing.external_id)
+            if not sent:
+                logger.debug("Broadcast dedupe: race-condition skip for %s", listing.external_id)
+        finally:
+            session.close()
+
     async def _send_notification(
         self,
         chat_id: int,
@@ -171,3 +305,81 @@ class WatcherService:
             parse_mode="HTML",
             reply_markup=kb,
         )
+
+    async def _send_group_notification(
+        self,
+        chat_id: int,
+        thread_id: int,
+        listing: Listing,
+    ) -> None:
+        """Send a listing to a forum topic in the group supergroup."""
+        lines = [
+            f"<b>{listing.title}</b>",
+        ]
+        if listing.price:
+            lines.append(f"💰 {listing.price}")
+        if listing.city:
+            lines.append(f"📍 {listing.city}")
+
+        text = "\n".join(lines)
+
+        link_btn = InlineKeyboardButton(text="🔗 Skatīt / View", url=listing.url)
+        kb = InlineKeyboardMarkup(inline_keyboard=[[link_btn]])
+
+        valid_photos = [
+            url for url in listing.photo_urls[:_MAX_PHOTOS_PER_NOTIFICATION]
+            if url and url.startswith("http")
+        ]
+
+        if len(valid_photos) > 1:
+            media = []
+            for i, photo_url in enumerate(valid_photos):
+                if i == 0:
+                    media.append(InputMediaPhoto(media=photo_url, caption=text, parse_mode="HTML"))
+                else:
+                    media.append(InputMediaPhoto(media=photo_url))
+            try:
+                await self.bot.send_media_group(
+                    chat_id=chat_id,
+                    media=media,
+                    message_thread_id=thread_id,
+                )
+                await self.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"🔗 {listing.url}",
+                    reply_markup=kb,
+                    message_thread_id=thread_id,
+                )
+                return
+            except Exception as exc:
+                logger.warning(
+                    "Broadcast: send_media_group failed for listing %s (%s), falling back to text",
+                    listing.external_id, exc,
+                )
+
+        elif len(valid_photos) == 1:
+            try:
+                await self.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=valid_photos[0],
+                    caption=text,
+                    parse_mode="HTML",
+                    reply_markup=kb,
+                    message_thread_id=thread_id,
+                )
+                return
+            except Exception as exc:
+                logger.warning(
+                    "Broadcast: send_photo failed for listing %s (%s), falling back to text",
+                    listing.external_id, exc,
+                )
+
+        # Fallback: plain text
+        await self.bot.send_message(
+            chat_id=chat_id,
+            text=f"{text}\n\n🔗 {listing.url}",
+            parse_mode="HTML",
+            reply_markup=kb,
+            message_thread_id=thread_id,
+        )
+

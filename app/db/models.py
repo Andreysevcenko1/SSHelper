@@ -27,3 +27,18 @@ class Search(Base):
     base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     filters_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     effective_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class BroadcastSent(Base):
+    """Tracks which listing external_ids have already been broadcast to the group.
+
+    Used to deduplicate group posts when multiple user searches detect the same
+    listing. The table is keyed by ``external_id`` so a single row per listing
+    is ever inserted; subsequent insert attempts are silently ignored.
+    """
+
+    __tablename__ = "broadcast_sent"
+
+    external_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+

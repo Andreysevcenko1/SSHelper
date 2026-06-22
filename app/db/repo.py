@@ -2,9 +2,10 @@ import json
 from datetime import datetime, timedelta
 
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import Search, UserSettings
+from app.db.models import BroadcastSent, Search, UserSettings
 from app.services.filters import (
     build_effective_url,
     filters_from_json,
@@ -168,3 +169,33 @@ class SearchRepository:
             self.session.execute(text("VACUUM"))
         except Exception:
             pass  # Not supported on all engines (e.g. PostgreSQL in transactions)
+
+
+class BroadcastRepository:
+    """Tracks which listings have already been broadcast to the group forum.
+
+    Uses insert-ignore semantics so that the first caller wins and subsequent
+    attempts for the same ``external_id`` are silently skipped.
+    """
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def mark_sent(self, external_id: str) -> bool:
+        """Insert *external_id* into broadcast_sent.
+
+        Returns True if the row was newly inserted (first time seen),
+        False if it already existed (duplicate — should be skipped).
+        """
+        row = BroadcastSent(external_id=external_id, sent_at=datetime.utcnow())
+        try:
+            self.session.add(row)
+            self.session.commit()
+            return True
+        except IntegrityError:
+            self.session.rollback()
+            return False
+
+    def already_sent(self, external_id: str) -> bool:
+        """Return True if *external_id* is already in broadcast_sent."""
+        return self.session.get(BroadcastSent, external_id) is not None
