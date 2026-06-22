@@ -10,6 +10,7 @@ class Config:
     telegram_bot_token: str
     database_url: str = "sqlite:///./sshelper.db"
     poll_interval_seconds: int = 120
+    group_poll_interval_seconds: int = 120
     # Broadcast / forum-topic delivery
     broadcast_enabled: bool = False
     broadcast_chat_id: Optional[int] = None
@@ -17,6 +18,8 @@ class Config:
     thread_sell_riga: Optional[int] = None
     thread_auto_riga: Optional[int] = None
     thread_other_cities: Optional[int] = None
+    # Admin user IDs allowed to manage group searches (comma-separated in env)
+    admin_user_ids: list[int] = field(default_factory=list)
 
 
 def _parse_optional_int(raw: str, name: str) -> Optional[int]:
@@ -43,6 +46,24 @@ def load_config() -> Config:
         poll_interval_seconds = max(int(poll_interval_raw), 30)
     except ValueError as exc:
         raise ValueError("POLL_INTERVAL_SECONDS must be an integer") from exc
+
+    group_poll_interval_raw = os.getenv("GROUP_POLL_INTERVAL_SECONDS", poll_interval_raw).strip()
+    try:
+        group_poll_interval_seconds = max(int(group_poll_interval_raw), 30)
+    except ValueError as exc:
+        raise ValueError("GROUP_POLL_INTERVAL_SECONDS must be an integer") from exc
+
+    # Admin user IDs (comma-separated)
+    admin_ids_raw = os.getenv("ADMIN_USER_IDS", "").strip()
+    admin_user_ids: list[int] = []
+    if admin_ids_raw:
+        for part in admin_ids_raw.split(","):
+            part = part.strip()
+            if part:
+                try:
+                    admin_user_ids.append(int(part))
+                except ValueError as exc:
+                    raise ValueError(f"ADMIN_USER_IDS contains non-integer value: {part!r}") from exc
 
     # Broadcast config
     broadcast_enabled_raw = os.getenv("BROADCAST_ENABLED", "false").strip().lower()
@@ -75,10 +96,12 @@ def load_config() -> Config:
         telegram_bot_token=token,
         database_url=database_url,
         poll_interval_seconds=poll_interval_seconds,
+        group_poll_interval_seconds=group_poll_interval_seconds,
         broadcast_enabled=broadcast_enabled,
         broadcast_chat_id=broadcast_chat_id,
         thread_ire_riga=thread_ire_riga,
         thread_sell_riga=thread_sell_riga,
         thread_auto_riga=thread_auto_riga,
         thread_other_cities=thread_other_cities,
+        admin_user_ids=admin_user_ids,
     )

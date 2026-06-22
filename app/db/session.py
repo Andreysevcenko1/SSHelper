@@ -58,6 +58,26 @@ def _migrate_sqlite(engine) -> None:
                 "sent_at DATETIME NOT NULL)"
             ))
 
+        # Ensure group_searches table exists (created by create_all above, but
+        # guard for databases that pre-date this migration).
+        result = conn.execute(text("PRAGMA table_info(group_searches)"))
+        gs_existing = {row[1] for row in result}
+        if not gs_existing:
+            logger.info("Migration: creating group_searches table")
+            conn.execute(text(
+                "CREATE TABLE IF NOT EXISTS group_searches "
+                "(id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, "
+                "title TEXT NOT NULL, "
+                "url TEXT NOT NULL, "
+                "base_url TEXT, "
+                "filters_json TEXT, "
+                "effective_url TEXT, "
+                "route_key TEXT NOT NULL DEFAULT 'other', "
+                "is_active BOOLEAN NOT NULL DEFAULT 1, "
+                "last_seen_external_id TEXT, "
+                "created_at DATETIME NOT NULL)"
+            ))
+
         conn.commit()
 
 

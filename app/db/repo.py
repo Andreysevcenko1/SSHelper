@@ -5,7 +5,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import BroadcastSent, Search, UserSettings
+from app.db.models import BroadcastSent, GroupSearch, Search, UserSettings
 from app.services.filters import (
     build_effective_url,
     filters_from_json,
@@ -169,6 +169,65 @@ class SearchRepository:
             self.session.execute(text("VACUUM"))
         except Exception:
             pass  # Not supported on all engines (e.g. PostgreSQL in transactions)
+
+
+class GroupSearchRepository:
+    """Repository for group-level searches that are broadcast to forum topics."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add_group_search(
+        self,
+        title: str,
+        url: str,
+        route_key: str = "other",
+        base_url: str | None = None,
+        filters_json: str | None = None,
+        effective_url: str | None = None,
+    ) -> GroupSearch:
+        search = GroupSearch(
+            title=title,
+            url=url,
+            route_key=route_key,
+            base_url=base_url,
+            filters_json=filters_json,
+            effective_url=effective_url,
+        )
+        self.session.add(search)
+        self.session.commit()
+        self.session.refresh(search)
+        return search
+
+    def get_active_group_searches(self) -> list[GroupSearch]:
+        stmt = select(GroupSearch).where(GroupSearch.is_active.is_(True))
+        return list(self.session.scalars(stmt).all())
+
+    def get_group_searches(self) -> list[GroupSearch]:
+        stmt = select(GroupSearch).order_by(GroupSearch.id)
+        return list(self.session.scalars(stmt).all())
+
+    def get_group_search_by_id(self, search_id: int) -> GroupSearch | None:
+        return self.session.get(GroupSearch, search_id)
+
+    def pause_group_search(self, search: GroupSearch) -> None:
+        search.is_active = False
+        self.session.add(search)
+        self.session.commit()
+
+    def resume_group_search(self, search: GroupSearch) -> None:
+        search.is_active = True
+        self.session.add(search)
+        self.session.commit()
+
+    def delete_group_search(self, search: GroupSearch) -> None:
+        self.session.delete(search)
+        self.session.commit()
+
+    def update_last_seen(self, search: GroupSearch, external_id: str) -> None:
+        search.last_seen_external_id = external_id
+        self.session.add(search)
+        self.session.commit()
 
 
 class BroadcastRepository:
