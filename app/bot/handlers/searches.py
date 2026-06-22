@@ -14,7 +14,7 @@ from app.bot.keyboards.searches import (
 )
 from app.db.repo import SearchRepository
 from app.i18n import get_text, translate_category
-from app.services.filters import filters_from_json
+from app.services.filters import filter_display_label, filters_from_json
 from app.bot.utils import try_delete_message
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,9 @@ async def cmd_list(message: Message, session_factory: sessionmaker[Session]) -> 
         entry = f"#{s.id} — {category_label} [{status}]\n🔗 {display_url}"
         filters = filters_from_json(s.filters_json)
         if filters:
-            filter_str = ", ".join(f"{k}={v}" for k, v in filters.items())
+            filter_str = ", ".join(
+                f"{filter_display_label(k, locale=lang)}={v}" for k, v in filters.items()
+            )
             entry += f"\n🔍 {filter_str}"
         lines.append(entry)
 

@@ -383,6 +383,26 @@ _T: dict[str, dict[str, str]] = {
         "ru": "Цена: до",
         "en": "Price: to",
     },
+    "filter_lbl_area_from": {
+        "lv": "Platība no",
+        "ru": "Площадь от",
+        "en": "Area from",
+    },
+    "filter_lbl_area_to": {
+        "lv": "Platība līdz",
+        "ru": "Площадь до",
+        "en": "Area to",
+    },
+    "filter_lbl_rooms_from": {
+        "lv": "Istabas no",
+        "ru": "Комнаты от",
+        "en": "Rooms from",
+    },
+    "filter_lbl_rooms_to": {
+        "lv": "Istabas līdz",
+        "ru": "Комнаты до",
+        "en": "Rooms to",
+    },
     "filter_lbl_range_min": {
         "lv": "no",
         "ru": "от",

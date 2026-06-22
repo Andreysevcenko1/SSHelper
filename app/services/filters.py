@@ -17,8 +17,17 @@ _RE_MID = re.compile(r"^mid\[([^\]]*)\]$", re.IGNORECASE)
 _RE_PRICE_MIN = re.compile(r"^(?:pr_?min|price_?(?:min|from))$", re.IGNORECASE)
 _RE_PRICE_MAX = re.compile(r"^(?:pr_?max|price_?(?:max|to))$", re.IGNORECASE)
 
-# SS.lv numeric ID for the price range topt field (topt[15][min/max])
-_PRICE_TOPT_ID = "15"
+# Known SS.lv opt[N] field IDs → i18n label key (single-value option fields)
+_OPT_ID_LABEL_MAP: dict[str, str] = {
+    "17": "filter_lbl_price_from",
+    "32": "filter_lbl_price_to",
+}
+
+# Known SS.lv topt[N] field IDs → (min_label_key, max_label_key) for range fields
+_TOPT_ID_LABEL_MAP: dict[str, tuple[str, str]] = {
+    "15": ("filter_lbl_area_from", "filter_lbl_area_to"),
+    "18": ("filter_lbl_rooms_from", "filter_lbl_rooms_to"),
+}
 
 
 def filter_display_label(
@@ -78,10 +87,9 @@ def filter_display_label(
     m = _RE_TOPT_RANGE.match(key)
     if m:
         n, bound = m.group(1), m.group(2).lower()
-        if n == _PRICE_TOPT_ID:
-            text_key = (
-                "filter_lbl_topt_price_min" if bound == "min" else "filter_lbl_topt_price_max"
-            )
+        id_labels = _TOPT_ID_LABEL_MAP.get(n)
+        if id_labels:
+            text_key = id_labels[0] if bound == "min" else id_labels[1]
             resolved = get_text(text_key, locale)
         else:
             suffix = get_text(
@@ -98,8 +106,12 @@ def filter_display_label(
     m = _RE_OPT.match(key)
     if m:
         n = m.group(1)
-        base = get_text("filter_lbl_opt", locale)
-        resolved = f"{base} #{n}" if n else base
+        id_label = _OPT_ID_LABEL_MAP.get(n) if n else None
+        if id_label:
+            resolved = get_text(id_label, locale)
+        else:
+            base = get_text("filter_lbl_opt", locale)
+            resolved = f"{base} #{n}" if n else base
         logger.debug(
             "filter_display_label: key=%r locale=%s → %r (opt pattern)",
             key, locale, resolved,
