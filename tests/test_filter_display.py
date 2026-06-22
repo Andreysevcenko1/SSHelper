@@ -28,12 +28,18 @@ _RAW_KEY_PATTERN = re.compile(r"(opt|topt|mid)\[")
         ("pr_max", "Price to"),
         ("PR_MIN", "Price from"),
         ("PR_MAX", "Price to"),
-        ("topt[15][min]", "Price: from"),
-        ("topt[15][max]", "Price: to"),
+        # Known field ID mappings
+        ("opt[17]", "Price from"),
+        ("opt[32]", "Price to"),
+        ("topt[15][min]", "Area from"),
+        ("topt[15][max]", "Area to"),
+        ("topt[18][min]", "Rooms from"),
+        ("topt[18][max]", "Rooms to"),
+        # Unknown topt range IDs still get a generic label
         ("topt[5][min]", "Filter #5: from"),
         ("topt[5][max]", "Filter #5: to"),
-        ("topt[15][MIN]", "Price: from"),
-        ("topt[15][MAX]", "Price: to"),
+        ("topt[15][MIN]", "Area from"),
+        ("topt[15][MAX]", "Area to"),
     ],
 )
 def test_display_label_pattern_fallbacks_en(key, expected):
@@ -53,8 +59,14 @@ def test_display_label_pattern_fallbacks_en(key, expected):
         ("pr_max", "Цена до"),
         ("PR_MIN", "Цена от"),
         ("PR_MAX", "Цена до"),
-        ("topt[15][min]", "Цена: от"),
-        ("topt[15][max]", "Цена: до"),
+        # Known field ID mappings
+        ("opt[17]", "Цена от"),
+        ("opt[32]", "Цена до"),
+        ("topt[15][min]", "Площадь от"),
+        ("topt[15][max]", "Площадь до"),
+        ("topt[18][min]", "Комнаты от"),
+        ("topt[18][max]", "Комнаты до"),
+        # Unknown topt range IDs still get a generic label
         ("topt[7][min]", "Фильтр #7: от"),
         ("topt[7][max]", "Фильтр #7: до"),
     ],
@@ -72,8 +84,14 @@ def test_display_label_pattern_fallbacks_ru(key, expected):
         ("mid[78]", "Rajons #78"),
         ("pr_min", "Cena no"),
         ("pr_max", "Cena līdz"),
-        ("topt[15][min]", "Cena: no"),
-        ("topt[15][max]", "Cena: līdz"),
+        # Known field ID mappings
+        ("opt[17]", "Cena no"),
+        ("opt[32]", "Cena līdz"),
+        ("topt[15][min]", "Platība no"),
+        ("topt[15][max]", "Platība līdz"),
+        ("topt[18][min]", "Istabas no"),
+        ("topt[18][max]", "Istabas līdz"),
+        # Unknown topt range IDs still get a generic label
         ("topt[3][min]", "Filtrs #3: no"),
         ("topt[3][max]", "Filtrs #3: līdz"),
     ],
