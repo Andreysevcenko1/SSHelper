@@ -1,0 +1,214 @@
+"""Admin-only commands for managing group searches.
+
+Commands:
+  /gadd <route_key> <url> [title]   — add a new group search
+  /glist                            — list all group searches
+  /gpause <ID>                      — pause a group search
+  /gresume <ID>                     — resume a group search
+  /gdelete <ID>                     — delete a group search
+
+route_key must be one of: ire_riga, sell_riga, auto_riga, other
+"""
+
+import logging
+
+from aiogram import Router
+from aiogram.filters import Command
+from aiogram.types import Message
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.config import Config
+from app.db.repo import GroupSearchRepository
+
+logger = logging.getLogger(__name__)
+router = Router()
+
+_VALID_ROUTE_KEYS = {"ire_riga", "sell_riga", "auto_riga", "other"}
+
+
+def _is_admin(message: Message, config: Config) -> bool:
+    if message.from_user is None:
+        return False
+    return message.from_user.id in config.admin_user_ids
+
+
+@router.message(Command("gadd"))
+async def cmd_gadd(
+    message: Message,
+    session_factory: sessionmaker[Session],
+    config: Config,
+) -> None:
+    """Add a new group search: /gadd <route_key> <url> [title]"""
+    if not _is_admin(message, config):
+        return
+
+    parts = (message.text or "").split(maxsplit=3)
+    # parts[0] = /gadd, parts[1] = route_key, parts[2] = url, parts[3] = title (optional)
+    if len(parts) < 3:
+        await message.answer(
+            "Usage: /gadd &lt;route_key&gt; &lt;url&gt; [title]\n"
+            f"Valid route keys: {', '.join(sorted(_VALID_ROUTE_KEYS))}",
+            parse_mode="HTML",
+        )
+        return
+
+    route_key = parts[1].strip().lower()
+    if route_key not in _VALID_ROUTE_KEYS:
+        await message.answer(
+            f"Invalid route_key <b>{route_key}</b>. "
+            f"Must be one of: {', '.join(sorted(_VALID_ROUTE_KEYS))}",
+            parse_mode="HTML",
+        )
+        return
+
+    url = parts[2].strip()
+    title = parts[3].strip() if len(parts) > 3 else url
+
+    session = session_factory()
+    try:
+        repo = GroupSearchRepository(session)
+        search = repo.add_group_search(title=title, url=url, route_key=route_key)
+    finally:
+        session.close()
+
+    await message.answer(
+        f"✅ Group search <b>#{search.id}</b> added.\n"
+        f"Route: <code>{route_key}</code>\n"
+        f"URL: {url}",
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("glist"))
+async def cmd_glist(
+    message: Message,
+    session_factory: sessionmaker[Session],
+    config: Config,
+) -> None:
+    """List all group searches."""
+    if not _is_admin(message, config):
+        return
+
+    session = session_factory()
+    try:
+        repo = GroupSearchRepository(session)
+        searches = repo.get_group_searches()
+    finally:
+        session.close()
+
+    if not searches:
+        await message.answer("No group searches configured.")
+        return
+
+    lines = [f"<b>Group searches ({len(searches)}):</b>"]
+    for s in searches:
+        status = "✅ active" if s.is_active else "⏸ paused"
+        lines.append(
+            f"#{s.id} [{status}] <code>{s.route_key}</code> — {s.title}\n"
+            f"  🔗 {s.effective_url or s.url}"
+        )
+
+    await message.answer("\n\n".join(lines), parse_mode="HTML")
+
+
+@router.message(Command("gpause"))
+async def cmd_gpause(
+    message: Message,
+    session_factory: sessionmaker[Session],
+    config: Config,
+) -> None:
+    """Pause a group search: /gpause <ID>"""
+    if not _is_admin(message, config):
+        return
+
+    search_id = _parse_id(message)
+    if search_id is None:
+        await message.answer("Usage: /gpause &lt;ID&gt;", parse_mode="HTML")
+        return
+
+    session = session_factory()
+    try:
+        repo = GroupSearchRepository(session)
+        search = repo.get_group_search_by_id(search_id)
+        if search is None:
+            await message.answer(f"Group search #{search_id} not found.")
+            return
+        if not search.is_active:
+            await message.answer(f"Group search #{search_id} is already paused.")
+            return
+        repo.pause_group_search(search)
+    finally:
+        session.close()
+
+    await message.answer(f"⏸ Group search #{search_id} paused.")
+
+
+@router.message(Command("gresume"))
+async def cmd_gresume(
+    message: Message,
+    session_factory: sessionmaker[Session],
+    config: Config,
+) -> None:
+    """Resume a group search: /gresume <ID>"""
+    if not _is_admin(message, config):
+        return
+
+    search_id = _parse_id(message)
+    if search_id is None:
+        await message.answer("Usage: /gresume &lt;ID&gt;", parse_mode="HTML")
+        return
+
+    session = session_factory()
+    try:
+        repo = GroupSearchRepository(session)
+        search = repo.get_group_search_by_id(search_id)
+        if search is None:
+            await message.answer(f"Group search #{search_id} not found.")
+            return
+        if search.is_active:
+            await message.answer(f"Group search #{search_id} is already active.")
+            return
+        repo.resume_group_search(search)
+    finally:
+        session.close()
+
+    await message.answer(f"✅ Group search #{search_id} resumed.")
+
+
+@router.message(Command("gdelete"))
+async def cmd_gdelete(
+    message: Message,
+    session_factory: sessionmaker[Session],
+    config: Config,
+) -> None:
+    """Delete a group search: /gdelete <ID>"""
+    if not _is_admin(message, config):
+        return
+
+    search_id = _parse_id(message)
+    if search_id is None:
+        await message.answer("Usage: /gdelete &lt;ID&gt;", parse_mode="HTML")
+        return
+
+    session = session_factory()
+    try:
+        repo = GroupSearchRepository(session)
+        search = repo.get_group_search_by_id(search_id)
+        if search is None:
+            await message.answer(f"Group search #{search_id} not found.")
+            return
+        repo.delete_group_search(search)
+    finally:
+        session.close()
+
+    await message.answer(f"🗑 Group search #{search_id} deleted.")
+
+
+def _parse_id(message: Message) -> int | None:
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        return None
+    try:
+        return int(parts[1].strip())
+    except ValueError:
+        return None

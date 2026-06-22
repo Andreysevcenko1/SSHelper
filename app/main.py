@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.bot import get_main_router
 from app.config import load_config
-from app.db.repo import SearchRepository
+from app.db.repo import GroupSearchRepository, SearchRepository
 from app.db.session import create_session_factory
+from app.services.group_watcher import GroupWatcherService
 from app.services.ss_parser import SSParser
 from app.services.watcher import WatcherService
 
@@ -27,6 +28,12 @@ _BOT_COMMANDS = [
     BotCommand(command="setfilter", description="Установить фильтр: /setfilter <ID> <поле> <значение>"),
     BotCommand(command="delfilter", description="Удалить фильтр: /delfilter <ID> <поле>"),
     BotCommand(command="clearfilters", description="Очистить фильтры: /clearfilters <ID>"),
+    # Admin-only group search management
+    BotCommand(command="gadd", description="[Admin] Добавить групповой поиск: /gadd <route> <url> [title]"),
+    BotCommand(command="glist", description="[Admin] Список групповых поисков"),
+    BotCommand(command="gpause", description="[Admin] Приостановить: /gpause <ID>"),
+    BotCommand(command="gresume", description="[Admin] Возобновить: /gresume <ID>"),
+    BotCommand(command="gdelete", description="[Admin] Удалить: /gdelete <ID>"),
 ]
 
 logger = logging.getLogger(__name__)
@@ -65,8 +72,41 @@ async def run() -> None:
     parser = SSParser()
     watcher = WatcherService(session_factory=session_factory, parser=parser, bot=bot, config=config)
 
+    # Group watcher — independent pipeline, only runs when broadcast is configured
+    group_watcher: GroupWatcherService | None = None
+    if config.broadcast_enabled:
+        group_watcher = GroupWatcherService(
+            session_factory=session_factory,
+            parser=parser,
+            bot=bot,
+            config=config,
+        )
+        session = session_factory()
+        try:
+            active_count = len(GroupSearchRepository(session).get_active_group_searches())
+        finally:
+            session.close()
+        logger.info(
+            "Group watcher enabled: %d active group search(es), interval=%ds",
+            active_count,
+            config.group_poll_interval_seconds,
+        )
+    else:
+        logger.info("Group watcher disabled (BROADCAST_ENABLED is false)")
+
+    logger.info(
+        "Personal watcher enabled: interval=%ds",
+        config.poll_interval_seconds,
+    )
+
     scheduler = AsyncIOScheduler()
     scheduler.add_job(watcher.check_all, trigger="interval", seconds=config.poll_interval_seconds)
+    if group_watcher is not None:
+        scheduler.add_job(
+            group_watcher.check_all,
+            trigger="interval",
+            seconds=config.group_poll_interval_seconds,
+        )
     # DB hygiene runs once a day
     scheduler.add_job(
         _db_hygiene_job,
@@ -77,7 +117,7 @@ async def run() -> None:
     scheduler.start()
 
     try:
-        await dp.start_polling(bot, session_factory=session_factory)
+        await dp.start_polling(bot, session_factory=session_factory, config=config)
     finally:
         scheduler.shutdown(wait=False)
         await bot.session.close()

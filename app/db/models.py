@@ -29,6 +29,23 @@ class Search(Base):
     effective_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class GroupSearch(Base):
+    """A search that is polled independently and posted to a group forum topic."""
+
+    __tablename__ = "group_searches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    filters_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    effective_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    route_key: Mapped[str] = mapped_column(String(32), nullable=False, default="other")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_seen_external_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class BroadcastSent(Base):
     """Tracks which listing external_ids have already been broadcast to the group.
 
