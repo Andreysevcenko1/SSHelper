@@ -52,6 +52,14 @@ class TestDetectProfile:
         url = "https://ss.lv/lv/transport/cars/bmw/?opt[4]=2&topt[8][min]=2018"
         assert detect_profile(url) == "cars"
 
+    def test_flats_without_trailing_slash(self):
+        url = "https://ss.lv/lv/real-estate/flats"
+        assert detect_profile(url) == "flats"
+
+    def test_cars_without_trailing_slash(self):
+        url = "https://ss.lv/lv/transport/cars"
+        assert detect_profile(url) == "cars"
+
 
 # ---------------------------------------------------------------------------
 # get_profile

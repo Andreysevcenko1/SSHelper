@@ -41,9 +41,15 @@ def get_profile(name: str | None) -> ModuleType | None:
 # The first match wins.
 _PROFILE_RULES: list[tuple[re.Pattern[str], str]] = [
     # /real-estate/flats/ or /nekustamais-ipasums/dzivokli/ variants
-    (re.compile(r"/(?:real-estate|nekustamais[_-]ipasums)/(?:flats|dzivokli|apartments)/", re.I), "flats"),
+    (
+        re.compile(
+            r"/(?:real-estate|nekustamais[_-]ipasums)/(?:flats|dzivokli|apartments)(?:/|$)",
+            re.I,
+        ),
+        "flats",
+    ),
     # /transport/cars/ or /transports/auto/
-    (re.compile(r"/(?:transport|transports)/(?:cars|auto)/", re.I), "cars"),
+    (re.compile(r"/(?:transport|transports)/(?:cars|auto)(?:/|$)", re.I), "cars"),
 ]
 
 

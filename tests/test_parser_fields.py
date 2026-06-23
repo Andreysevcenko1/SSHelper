@@ -400,6 +400,14 @@ _DETAIL_HTML_RENT = """
 </body></html>
 """
 
+_DETAIL_HTML_IMAGE_VARIANTS = """
+<html><body>
+<a href="https://i.ss.lv/img/cl/large/a/b/111.jpg">large</a>
+<a href="https://i.ss.lv/img/cl/original/a/b/111.jpg">original</a>
+<img src="https://i.ss.lv/img/cl/small/a/b/111.jpg" />
+</body></html>
+"""
+
 
 # ---------------------------------------------------------------------------
 # parse_detail_page
@@ -449,6 +457,10 @@ class TestParseDetailPage:
     def test_image_url_hd(self):
         data = parse_detail_page(_DETAIL_HTML)
         assert data.get("image_url_hd") == "https://i.ss.lv/img/cl/large/a/b/12345.jpg"
+
+    def test_image_selection_prefers_original_then_large_then_preview(self):
+        data = parse_detail_page(_DETAIL_HTML_IMAGE_VARIANTS)
+        assert data.get("image_url_hd") == "https://i.ss.lv/img/cl/original/a/b/111.jpg"
 
     def test_missing_spec_table_no_crash(self):
         data = parse_detail_page("<html><body><p>No spec table</p></body></html>")

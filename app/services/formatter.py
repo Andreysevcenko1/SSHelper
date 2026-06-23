@@ -52,6 +52,18 @@ def upgrade_image_url(url: str) -> str:
     return upgraded
 
 
+def _image_quality_rank(url: str) -> int:
+    """Return quality rank for *url*: 3=full/original, 2=large, 1=preview, 0=unknown."""
+    lowered = url.lower()
+    if any(token in lowered for token in ("/original/", "/orig/", "/full/")):
+        return 3
+    if "/large/" in lowered:
+        return 2
+    if any(token in lowered for token in ("/small/", "/thumb/", "/preview/")):
+        return 1
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Image selection
 # ---------------------------------------------------------------------------
@@ -60,13 +72,10 @@ def select_image_url(listing: "Listing") -> str | None:
     """
     Return the best available HD image URL in priority order:
 
-    1. ``listing.image_url_hd``  (explicit HD URL stored by the parser)
-    2. First entry of ``listing.photo_urls`` — returned as-is when already
-       HD-looking, or after a size-segment upgrade (``/small/``→``/large/``).
-    3. ``None`` — never returns a raw preview/thumbnail URL.
-
-    Callers that receive ``None`` must fall back to a text-only message rather
-    than sending a blurry low-resolution thumbnail.
+    1. ``listing.image_url_hd``  (explicit HD URL from detail/gallery)
+    2. Largest variant from ``listing.photo_urls`` (with size upgrade when possible)
+    3. ``listing.image_url_preview`` (last resort)
+    4. ``None`` when no image URL is available.
     """
     if listing.image_url_hd:
         logger.debug(
@@ -76,21 +85,30 @@ def select_image_url(listing: "Listing") -> str | None:
         return listing.image_url_hd
 
     if listing.photo_urls:
-        original = listing.photo_urls[0]
-        upgraded = upgrade_image_url(original)
-        if upgraded != original:
-            logger.debug(
-                "Image selected: upgraded to large for listing %s → %s",
-                listing.external_id, upgraded,
-            )
-        else:
-            logger.debug(
-                "Image selected: photo_url (no size upgrade) for listing %s → %s",
-                listing.external_id, original,
-            )
-        return upgraded
+        variants: list[str] = []
+        for original in listing.photo_urls:
+            upgraded = upgrade_image_url(original)
+            variants.append(upgraded)
+            if upgraded != original:
+                variants.append(original)
+        best = max(variants, key=_image_quality_rank)
+        logger.debug(
+            "Image selected: best gallery variant for listing %s → %s (rank=%s)",
+            listing.external_id,
+            best,
+            _image_quality_rank(best),
+        )
+        return best
 
-    logger.debug("Image selected: none available for listing %s (preview omitted)", listing.external_id)
+    if listing.image_url_preview:
+        logger.debug(
+            "Image selected: preview fallback for listing %s → %s",
+            listing.external_id,
+            listing.image_url_preview,
+        )
+        return listing.image_url_preview
+
+    logger.debug("Image selected: none available for listing %s", listing.external_id)
     return None
 
 
@@ -200,7 +218,6 @@ def format_sell_message(listing: "Listing") -> str:
         _opt_line("🛏 Комнат", listing.rooms),
         _opt_line("📐 Площадь", area_str),
         _opt_line("🏢 Этаж", floor_str),
-        _opt_line("🏗 Серия", listing.series),
         _opt_line("🧱 Тип дома", listing.house_type),
         _opt_line("💶 Цена за м²", per_m2_str),
         _opt_line("💰 Полная цена", total_str),
@@ -227,7 +244,6 @@ def format_rent_message(listing: "Listing") -> str:
         _opt_line("🛏 Комнат", listing.rooms),
         _opt_line("📐 Площадь", area_str),
         _opt_line("🏢 Этаж", floor_str),
-        _opt_line("🏗 Серия", listing.series),
         _opt_line("🧱 Тип дома", listing.house_type),
         _opt_line("💶 Цена в месяц", monthly_str),
     ]:

@@ -160,17 +160,14 @@ class TestSelectImageUrl:
         result = select_image_url(listing)
         assert result == "https://i.ss.lv/img/cl/large/abc/1.jpg"
 
-    def test_preview_not_used_as_fallback(self):
-        """select_image_url must return None when only image_url_preview is available.
-
-        We must never send a raw thumbnail — callers should fall back to text.
-        """
+    def test_preview_used_as_last_resort(self):
+        """Preview is used only when no HD/gallery image is available."""
         listing = _listing(
             image_url_hd=None,
             photo_urls=[],
             image_url_preview="https://i.ss.lv/img/cl/small/abc/1.jpg",
         )
-        assert select_image_url(listing) is None
+        assert select_image_url(listing) == "https://i.ss.lv/img/cl/small/abc/1.jpg"
 
     def test_none_when_no_images(self):
         listing = _listing(image_url_hd=None, photo_urls=[], image_url_preview=None)
@@ -385,16 +382,16 @@ class TestUpgradeImageUrlThumb:
 
 
 class TestSelectImageUrlNoPreviousFallback:
-    """select_image_url must never return a raw preview/thumbnail URL."""
+    """select_image_url prefers HD/large, preview only as last resort."""
 
-    def test_none_when_only_preview_available(self):
-        """No photo_urls and only image_url_preview → must return None."""
+    def test_preview_when_only_preview_available(self):
+        """No photo_urls and only image_url_preview → preview is used as last resort."""
         listing = _listing(
             image_url_hd=None,
             photo_urls=[],
             image_url_preview="https://i.ss.lv/img/cl/small/abc/1.jpg",
         )
-        assert select_image_url(listing) is None
+        assert select_image_url(listing) == "https://i.ss.lv/img/cl/small/abc/1.jpg"
 
     def test_hd_image_priority_over_preview(self):
         """image_url_hd is returned even when preview is also present."""

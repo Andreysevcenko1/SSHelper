@@ -20,8 +20,10 @@ from app.bot.keyboards.searches import (
 from app.bot.keyboards.filters import filters_menu_kb
 from app.bot.states import AddSearchFSM
 from app.db.repo import SearchRepository
+from app.filters.profiles import detect_profile
+from app.filters.renderer import render_canonical_filters
 from app.i18n import get_text, translate_category
-from app.services.filters import filters_from_json
+from app.services.filters import filter_display_label, filters_from_json
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -55,8 +57,14 @@ def _format_search_details(search, filters: dict, lang: str) -> str:
         lines.append(f"\n⚠️ {get_text('err_already_paused', lang)}")
     if filters:
         lines.append(get_text("search_detail_active_filters", lang))
-        for k, v in filters.items():
-            lines.append(f"  • {k}: {v}")
+        profile = search.category_profile or detect_profile(search.effective_url or search.url or "")
+        if profile:
+            lines.extend(render_canonical_filters(filters, profile, locale=lang))
+        else:
+            lines.extend(
+                f"  • {filter_display_label(k, locale=lang)}: {v}"
+                for k, v in filters.items()
+            )
     else:
         lines.append(get_text("search_detail_no_filters", lang))
     return "\n".join(lines)
@@ -331,11 +339,17 @@ async def cb_search_filters(
     finally:
         session.close()
 
-    content = (
-        "\n".join(f"  • {k}: {v}" for k, v in filters.items())
-        if filters
-        else get_text("filters_none", lang)
-    )
+    if filters:
+        profile = search.category_profile or detect_profile(search.effective_url or search.url or "")
+        if profile:
+            content = "\n".join(render_canonical_filters(filters, profile, locale=lang))
+        else:
+            content = "\n".join(
+                f"  • {filter_display_label(k, locale=lang)}: {v}"
+                for k, v in filters.items()
+            )
+    else:
+        content = get_text("filters_none", lang)
     text = get_text("filters_header", lang, sid=sid, content=content)
     await _safe_edit(
         callback,

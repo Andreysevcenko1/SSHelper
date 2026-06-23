@@ -299,31 +299,42 @@ def _parse_spec_table(table: Tag, result: dict) -> None:
 
 
 def _extract_detail_image(soup: BeautifulSoup) -> str | None:
-    """Return the best (largest) image URL found on a detail page, or ``None``."""
+    """Return the best image URL found on a detail page, or ``None``."""
     from app.services.formatter import upgrade_image_url
 
-    # Prefer explicit links to large images
-    for a in soup.find_all("a", href=True):
-        href = str(a.get("href", "")).strip()
-        if "/large/" in href and re.search(r"\.(jpe?g|png|webp)$", href, re.IGNORECASE):
-            return href
+    def _rank(url: str) -> tuple[int, int]:
+        lowered = url.lower()
+        if any(token in lowered for token in ("/original/", "/orig/", "/full/")):
+            base = 3
+        elif "/large/" in lowered:
+            base = 2
+        elif any(token in lowered for token in ("/small/", "/thumb/", "/preview/")):
+            base = 0
+        else:
+            base = 1
+        dims = re.search(r'(\d{2,4})[xX](\d{2,4})', lowered)
+        area = int(dims.group(1)) * int(dims.group(2)) if dims else 0
+        return base, area
 
-    # Fall back to <img> tags — prefer /large/ paths, skip icons / navigation
-    best: str | None = None
-    for img in soup.find_all("img", src=True):
-        src = str(img.get("src", "")).strip()
-        if not src or src.endswith(".gif"):
-            continue
-        if any(seg in src for seg in ("/nav/", "/icon", "/logo")):
-            continue
-        if "/large/" in src:
-            return src
-        if best is None:
-            best = src
+    candidates: list[str] = []
+    for tag, attr in (("a", "href"), ("img", "src")):
+        for node in soup.find_all(tag):
+            raw = str(node.get(attr, "")).strip()
+            if not raw or raw.lower().endswith(".gif"):
+                continue
+            lowered = raw.lower()
+            if any(seg in lowered for seg in ("/nav/", "/icon", "/logo", "/sprite/")):
+                continue
+            if not re.search(r"\.(jpe?g|png|webp)(?:[?#].*)?$", lowered) and "/img/" not in lowered:
+                continue
+            candidates.append(raw)
+            upgraded = upgrade_image_url(raw)
+            if upgraded != raw:
+                candidates.append(upgraded)
 
-    if best:
-        return upgrade_image_url(best)
-    return None
+    if not candidates:
+        return None
+    return max(candidates, key=_rank)
 
 
 def parse_detail_page(html: str) -> dict:
@@ -599,10 +610,10 @@ class SSParser:
         try:
             detail_data = await self._fetch_detail_page_data(listing.url)
             return enrich_listing_from_detail(listing, detail_data)
-        except Exception as exc:
-            logger.warning(
-                "Parser: detail fetch/enrich failed for listing %s — %s",
-                listing.external_id, exc,
+        except Exception:
+            logger.exception(
+                "Parser: detail fetch/enrich failed for listing %s",
+                listing.external_id,
             )
             return listing
 
