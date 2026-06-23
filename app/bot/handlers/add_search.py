@@ -24,6 +24,8 @@ from app.services.filters import (
     normalize_filters,
 )
 from app.services.ss_parser import SSParser, detect_category
+from app.filters.profiles import detect_profile
+from app.filters.renderer import render_canonical_filters
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -173,6 +175,7 @@ async def _process_add_url(
     b_url = base_url_without_query(url)
     eff_url = build_effective_url(b_url, normalized) if normalized else url
     filters_json_str = filters_to_json(normalized)
+    profile = detect_profile(url)
 
     # Discover schema for human-readable filter display (best-effort)
     schema: dict = {}
@@ -217,6 +220,7 @@ async def _process_add_url(
             base_url=b_url,
             filters_json=filters_json_str,
             effective_url=eff_url,
+            category_profile=profile,
         )
         search_id = search.id
     finally:
@@ -228,7 +232,11 @@ async def _process_add_url(
         f"🔗 {eff_url}",
     ]
     if normalized:
-        filter_lines = _format_filters(normalized, schema)
+        # Use profile-aware renderer; fall back to schema-based for generic
+        if profile:
+            filter_lines = render_canonical_filters(normalized, profile, locale=lang)
+        else:
+            filter_lines = _format_filters(normalized, schema)
         lines.append(get_text("search_detail_active_filters", lang))
         lines.extend(filter_lines)
     else:

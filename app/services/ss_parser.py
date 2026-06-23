@@ -248,6 +248,16 @@ def detect_category(url: str) -> str:
     return "ss.lv"
 
 
+def detect_profile_from_url(url: str) -> str | None:
+    """Return the category profile name for *url* (``"flats"``, ``"cars"``, or ``None``).
+
+    Delegates to :func:`app.filters.profiles.detect_profile` so the single
+    source of truth lives in the filters package.
+    """
+    from app.filters.profiles import detect_profile
+    return detect_profile(url)
+
+
 class SSParser:
     async def fetch_listings(self, search_url: str, limit: int = 20) -> list[Listing]:
         timeout = aiohttp.ClientTimeout(total=20)
