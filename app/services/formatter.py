@@ -45,10 +45,10 @@ def upgrade_image_url(url: str) -> str:
     """
     Try to convert a thumbnail URL to the highest-resolution variant.
 
-    SS.lv uses ``/small/`` and ``/large/`` path segments; replacing ``small``
-    with ``large`` gives the full-size image.
+    SS.lv uses ``/small/`` and ``/thumb/`` path segments for previews;
+    replacing either with ``/large/`` gives the full-size image.
     """
-    upgraded = re.sub(r'/small/', '/large/', url, flags=re.IGNORECASE)
+    upgraded = re.sub(r'/(small|thumb)/', '/large/', url, flags=re.IGNORECASE)
     return upgraded
 
 
@@ -58,12 +58,15 @@ def upgrade_image_url(url: str) -> str:
 
 def select_image_url(listing: "Listing") -> str | None:
     """
-    Return the best available image URL in priority order:
+    Return the best available HD image URL in priority order:
 
     1. ``listing.image_url_hd``  (explicit HD URL stored by the parser)
-    2. First entry of ``listing.photo_urls`` upgraded to HD if possible
-    3. ``listing.image_url_preview`` (thumb fallback)
-    4. ``None`` when no image is available at all
+    2. First entry of ``listing.photo_urls`` — returned as-is when already
+       HD-looking, or after a size-segment upgrade (``/small/``→``/large/``).
+    3. ``None`` — never returns a raw preview/thumbnail URL.
+
+    Callers that receive ``None`` must fall back to a text-only message rather
+    than sending a blurry low-resolution thumbnail.
     """
     if listing.image_url_hd:
         logger.debug(
@@ -82,19 +85,12 @@ def select_image_url(listing: "Listing") -> str | None:
             )
         else:
             logger.debug(
-                "Image selected: photo_url (no upgrade) for listing %s → %s",
+                "Image selected: photo_url (no size upgrade) for listing %s → %s",
                 listing.external_id, original,
             )
         return upgraded
 
-    if listing.image_url_preview:
-        logger.debug(
-            "Image selected: preview fallback for listing %s → %s",
-            listing.external_id, listing.image_url_preview,
-        )
-        return listing.image_url_preview
-
-    logger.debug("Image selected: none available for listing %s", listing.external_id)
+    logger.debug("Image selected: none available for listing %s (preview omitted)", listing.external_id)
     return None
 
 
