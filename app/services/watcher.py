@@ -8,12 +8,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import Config
 from app.db.repo import BroadcastRepository, SearchRepository, UserSettingsRepository
 from app.i18n import get_text, resolve_lang
-from app.services.formatter import format_listing_message, select_image_url
+from app.services.formatter import format_listing_message
+from app.services.notifier import send_listing_notification
 from app.services.ss_parser import Listing, SSParser
 
 logger = logging.getLogger(__name__)
-
-_MAX_CAPTION_LEN = 1024  # Telegram sendPhoto caption limit
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -249,69 +248,13 @@ class WatcherService:
         body = format_listing_message(listing)
         text = header + body
 
-        # Truncate caption to Telegram's limit
-        if len(text) > _MAX_CAPTION_LEN:
-            text = text[:_MAX_CAPTION_LEN - 1] + "…"
-
         link_btn = InlineKeyboardButton(
             text=get_text("listing_link", lang),
             url=listing.url,
         )
         kb = InlineKeyboardMarkup(inline_keyboard=[[link_btn]])
 
-        hd_url = select_image_url(listing)
-
-        if hd_url:
-            try:
-                await self.bot.send_photo(
-                    chat_id=chat_id,
-                    photo=hd_url,
-                    caption=text,
-                    parse_mode="HTML",
-                    reply_markup=kb,
-                )
-                logger.info(
-                    "Watcher: sent photo notification for listing %s (hd=%s)",
-                    listing.external_id, listing.image_url_hd is not None,
-                )
-                return
-            except Exception as exc:
-                logger.warning(
-                    "Watcher: send_photo failed for listing %s (%s), trying preview",
-                    listing.external_id, exc,
-                )
-            # Fallback to thumbnail / preview if HD send failed
-            if listing.image_url_preview and listing.image_url_preview != hd_url:
-                try:
-                    await self.bot.send_photo(
-                        chat_id=chat_id,
-                        photo=listing.image_url_preview,
-                        caption=text,
-                        parse_mode="HTML",
-                        reply_markup=kb,
-                    )
-                    logger.info(
-                        "Watcher: sent preview photo fallback for listing %s",
-                        listing.external_id,
-                    )
-                    return
-                except Exception as exc:
-                    logger.warning(
-                        "Watcher: preview fallback also failed for listing %s (%s)",
-                        listing.external_id, exc,
-                    )
-
-        # Final fallback: plain text message
-        await self.bot.send_message(
-            chat_id=chat_id,
-            text=text,
-            parse_mode="HTML",
-            reply_markup=kb,
-        )
-        logger.info(
-            "Watcher: sent text-only notification for listing %s",
-            listing.external_id,
-        )
+        await send_listing_notification(bot=self.bot, chat_id=chat_id, listing=listing, text=text, reply_markup=kb)
 
     async def _send_group_notification(
         self,
@@ -321,64 +264,15 @@ class WatcherService:
     ) -> None:
         """Send a listing to a forum topic using the unified formatter."""
         text = format_listing_message(listing)
-        if len(text) > _MAX_CAPTION_LEN:
-            text = text[:_MAX_CAPTION_LEN - 1] + "…"
-
         link_btn = InlineKeyboardButton(text="🔗 Skatīt / View", url=listing.url)
         kb = InlineKeyboardMarkup(inline_keyboard=[[link_btn]])
 
-        hd_url = select_image_url(listing)
-
-        if hd_url:
-            try:
-                await self.bot.send_photo(
-                    chat_id=chat_id,
-                    photo=hd_url,
-                    caption=text,
-                    parse_mode="HTML",
-                    reply_markup=kb,
-                    message_thread_id=thread_id,
-                )
-                logger.info(
-                    "Broadcast: sent photo for listing %s to thread %s (hd=%s)",
-                    listing.external_id, thread_id, listing.image_url_hd is not None,
-                )
-                return
-            except Exception as exc:
-                logger.warning(
-                    "Broadcast: send_photo failed for listing %s (%s), trying preview",
-                    listing.external_id, exc,
-                )
-            if listing.image_url_preview and listing.image_url_preview != hd_url:
-                try:
-                    await self.bot.send_photo(
-                        chat_id=chat_id,
-                        photo=listing.image_url_preview,
-                        caption=text,
-                        parse_mode="HTML",
-                        reply_markup=kb,
-                        message_thread_id=thread_id,
-                    )
-                    logger.info(
-                        "Broadcast: sent preview fallback for listing %s to thread %s",
-                        listing.external_id, thread_id,
-                    )
-                    return
-                except Exception as exc:
-                    logger.warning(
-                        "Broadcast: preview fallback failed for listing %s (%s)",
-                        listing.external_id, exc,
-                    )
-
-        await self.bot.send_message(
+        await send_listing_notification(
+            bot=self.bot,
             chat_id=chat_id,
+            listing=listing,
             text=text,
-            parse_mode="HTML",
             reply_markup=kb,
-            message_thread_id=thread_id,
-        )
-        logger.info(
-            "Broadcast: sent text-only message for listing %s to thread %s",
-            listing.external_id, thread_id,
+            thread_id=thread_id,
         )
 

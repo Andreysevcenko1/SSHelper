@@ -66,7 +66,7 @@ class TestUpgradeImageUrl:
         assert upgrade_image_url(url) == "https://i.ss.lv/img/cl/large/abc/def/12345.jpg"
 
     def test_no_small_segment_unchanged(self):
-        url = "https://i.ss.lv/img/cl/thumb/abc/def/12345.jpg"
+        url = "https://i.ss.lv/img/cl/orig/abc/def/12345.jpg"
         assert upgrade_image_url(url) == url
 
     def test_case_insensitive_small(self):
@@ -160,13 +160,17 @@ class TestSelectImageUrl:
         result = select_image_url(listing)
         assert result == "https://i.ss.lv/img/cl/large/abc/1.jpg"
 
-    def test_preview_fallback_when_no_photo_urls(self):
+    def test_preview_not_used_as_fallback(self):
+        """select_image_url must return None when only image_url_preview is available.
+
+        We must never send a raw thumbnail — callers should fall back to text.
+        """
         listing = _listing(
             image_url_hd=None,
             photo_urls=[],
             image_url_preview="https://i.ss.lv/img/cl/small/abc/1.jpg",
         )
-        assert select_image_url(listing) == "https://i.ss.lv/img/cl/small/abc/1.jpg"
+        assert select_image_url(listing) is None
 
     def test_none_when_no_images(self):
         listing = _listing(image_url_hd=None, photo_urls=[], image_url_preview=None)
@@ -362,3 +366,166 @@ class TestFormatListingMessage:
         )
         assert "💰 Полная цена" in msg
         assert "💶 Цена в месяц" not in msg
+
+
+# ---------------------------------------------------------------------------
+# Additional tests required by P0 hotfix
+# ---------------------------------------------------------------------------
+
+class TestUpgradeImageUrlThumb:
+    """upgrade_image_url should also handle /thumb/ segments."""
+
+    def test_thumb_to_large(self):
+        url = "https://i.ss.lv/img/cl/thumb/abc/def/12345.jpg"
+        assert upgrade_image_url(url) == "https://i.ss.lv/img/cl/large/abc/def/12345.jpg"
+
+    def test_small_still_upgraded(self):
+        url = "https://i.ss.lv/img/cl/small/abc/def/12345.jpg"
+        assert upgrade_image_url(url) == "https://i.ss.lv/img/cl/large/abc/def/12345.jpg"
+
+
+class TestSelectImageUrlNoPreviousFallback:
+    """select_image_url must never return a raw preview/thumbnail URL."""
+
+    def test_none_when_only_preview_available(self):
+        """No photo_urls and only image_url_preview → must return None."""
+        listing = _listing(
+            image_url_hd=None,
+            photo_urls=[],
+            image_url_preview="https://i.ss.lv/img/cl/small/abc/1.jpg",
+        )
+        assert select_image_url(listing) is None
+
+    def test_hd_image_priority_over_preview(self):
+        """image_url_hd is returned even when preview is also present."""
+        listing = _listing(
+            image_url_hd="https://i.ss.lv/img/cl/large/abc/1.jpg",
+            image_url_preview="https://i.ss.lv/img/cl/small/abc/1.jpg",
+            photo_urls=[],
+        )
+        assert select_image_url(listing) == "https://i.ss.lv/img/cl/large/abc/1.jpg"
+
+    def test_thumb_photo_url_upgraded(self):
+        """photo_urls entry with /thumb/ is upgraded to /large/."""
+        listing = _listing(
+            image_url_hd=None,
+            photo_urls=["https://i.ss.lv/img/cl/thumb/abc/1.jpg"],
+            image_url_preview="https://i.ss.lv/img/cl/thumb/abc/1.jpg",
+        )
+        assert select_image_url(listing) == "https://i.ss.lv/img/cl/large/abc/1.jpg"
+
+
+class TestSellTemplatePartialFields:
+    """Sell template renders correctly when only some fields are populated."""
+
+    def test_only_price_total_present(self):
+        listing = _listing(
+            deal_type="sell",
+            price_total_eur=99000.0,
+            district=None, street=None, rooms=None,
+            area_m2=None, floor_current=None, floor_total=None,
+            house_type=None, price_per_m2_eur=None,
+        )
+        msg = format_sell_message(listing)
+        # Populated field present
+        assert "💰 Полная цена" in msg
+        # URL always present
+        assert listing.url in msg
+        # Empty fields omitted
+        assert "🏙 Район" not in msg
+        assert "🛏 Комнат" not in msg
+
+    def test_three_fields_present(self):
+        listing = _listing(
+            deal_type="sell",
+            district="Centrs",
+            rooms=2,
+            price_total_eur=85000.0,
+            street=None, area_m2=None,
+            floor_current=None, floor_total=None,
+            house_type=None, price_per_m2_eur=None,
+        )
+        msg = format_sell_message(listing)
+        assert "🏙 Район: Centrs" in msg
+        assert "🛏 Комнат: 2" in msg
+        assert "💰 Полная цена" in msg
+        assert "📍 Улица" not in msg
+        assert listing.url in msg
+
+
+class TestRentTemplatePartialFields:
+    """Rent template renders correctly when only some fields are populated."""
+
+    def test_only_monthly_price_present(self):
+        listing = _listing(
+            deal_type="rent",
+            price_monthly_eur=500.0,
+            district=None, street=None, rooms=None,
+            area_m2=None, floor_current=None, floor_total=None,
+            house_type=None,
+        )
+        msg = format_rent_message(listing)
+        assert "💶 Цена в месяц" in msg
+        assert listing.url in msg
+        assert "🏙 Район" not in msg
+
+    def test_district_and_rooms_no_price(self):
+        listing = _listing(
+            deal_type="rent",
+            district="Purvciems",
+            rooms=3,
+            price_monthly_eur=None,
+        )
+        msg = format_rent_message(listing)
+        assert "🏙 Район: Purvciems" in msg
+        assert "🛏 Комнат: 3" in msg
+        assert "💶 Цена в месяц" not in msg
+        assert listing.url in msg
+
+
+class TestNoPhotoOnlyCaption:
+    """format_listing_message always returns a non-empty text with a URL line."""
+
+    def test_sell_always_has_url(self):
+        listing = _listing(deal_type="sell")
+        msg = format_listing_message(listing)
+        assert listing.url in msg
+
+    def test_rent_always_has_url(self):
+        listing = _listing(deal_type="rent")
+        msg = format_listing_message(listing)
+        assert listing.url in msg
+
+    def test_generic_always_has_url(self):
+        listing = _listing(deal_type="unknown")
+        msg = format_listing_message(listing)
+        assert listing.url in msg
+
+    def test_sell_full_fields_has_five_or_more_structured_lines(self):
+        """Acceptance criterion: ≥5 structured lines + link for a well-populated listing."""
+        listing = _listing(
+            deal_type="sell",
+            district="Centrs",
+            street="Barona 15",
+            rooms=3,
+            area_m2=68.0,
+            floor_current=3,
+            floor_total=9,
+            house_type="Sērijas",
+            price_total_eur=125000.0,
+            price_per_m2_eur=1838.0,
+        )
+        msg = format_listing_message(listing)
+        structured_lines = [
+            l for l in msg.splitlines()
+            if any(emoji in l for emoji in ("🏙", "📍", "🛏", "📐", "🏢", "🧱", "💶", "💰"))
+        ]
+        assert len(structured_lines) >= 5, f"Expected ≥5 structured lines, got {len(structured_lines)}"
+        assert listing.url in msg
+
+    def test_no_raw_opt_keys_in_output(self):
+        """No raw opt[ or topt[ keys should appear in any rendered message."""
+        listing = _listing(deal_type="sell", district="X", price_total_eur=1.0)
+        msg = format_listing_message(listing)
+        assert "opt[" not in msg
+        assert "topt[" not in msg
