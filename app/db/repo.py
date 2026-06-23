@@ -46,6 +46,7 @@ class SearchRepository:
         base_url: str | None = None,
         filters_json: str | None = None,
         effective_url: str | None = None,
+        category_profile: str | None = None,
     ) -> Search:
         search = Search(
             user_id=user_id,
@@ -54,6 +55,7 @@ class SearchRepository:
             base_url=base_url,
             filters_json=filters_json,
             effective_url=effective_url,
+            category_profile=category_profile,
         )
         self.session.add(search)
         self.session.commit()
@@ -185,6 +187,7 @@ class GroupSearchRepository:
         base_url: str | None = None,
         filters_json: str | None = None,
         effective_url: str | None = None,
+        category_profile: str | None = None,
     ) -> GroupSearch:
         search = GroupSearch(
             title=title,
@@ -193,6 +196,7 @@ class GroupSearchRepository:
             base_url=base_url,
             filters_json=filters_json,
             effective_url=effective_url,
+            category_profile=category_profile,
         )
         self.session.add(search)
         self.session.commit()

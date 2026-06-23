@@ -27,6 +27,8 @@ class Search(Base):
     base_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     filters_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     effective_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Category profile for filter rendering ("flats", "cars", or None = generic)
+    category_profile: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 class GroupSearch(Base):
@@ -44,6 +46,8 @@ class GroupSearch(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_seen_external_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    # Category profile for filter rendering ("flats", "cars", or None = generic)
+    category_profile: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 class BroadcastSent(Base):

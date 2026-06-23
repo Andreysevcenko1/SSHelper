@@ -31,6 +31,7 @@ from app.db.repo import SearchRepository
 from app.i18n import get_text
 from app.services.filters import filters_from_json, filter_display_label
 from app.services.ss_parser import SSParser
+from app.filters.renderer import render_canonical_filters
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -73,9 +74,31 @@ def _field_by_idx(schema: dict, fidx: int) -> tuple[str, dict] | tuple[None, Non
     return None, None
 
 
-def _filters_lines(filters: dict, schema: dict | None = None, lang: str = "lv") -> list[str]:
-    """Format filters as bullet lines using human-readable display labels."""
+def _filters_lines(
+    filters: dict,
+    schema: dict | None = None,
+    lang: str = "lv",
+    profile: str | None = None,
+) -> list[str]:
+    """Format filters as bullet lines.
+
+    Uses the profile-aware renderer when *profile* is given; falls back to
+    the legacy ``filter_display_label``-based formatter otherwise.
+    """
+    if profile:
+        return render_canonical_filters(filters, profile, locale=lang)
     return [f"  • {filter_display_label(k, schema, lang)} = {v}" for k, v in filters.items()]
+
+
+def _autodetect_profile(search) -> str | None:
+    """Auto-detect profile from a Search/GroupSearch URL for backward compatibility.
+
+    For existing records that were saved before the ``category_profile`` column
+    was introduced, we derive the profile on-the-fly from the stored URL.
+    """
+    from app.filters.profiles import detect_profile
+    url = search.url or ""
+    return detect_profile(url)
 
 
 async def _safe_edit(callback: CallbackQuery, text: str, reply_markup=None) -> None:
@@ -133,11 +156,12 @@ async def cmd_filters(
             return
         filters = filters_from_json(search.filters_json)
         sid = search.id
+        profile = search.category_profile or _autodetect_profile(search)
     finally:
         session.close()
 
     content = (
-        "\n".join(_filters_lines(filters, lang=lang))
+        "\n".join(_filters_lines(filters, lang=lang, profile=profile))
         if filters
         else get_text("filters_none", lang)
     )
@@ -347,6 +371,7 @@ async def cb_filter_show(
             return
         filters = filters_from_json(search.filters_json)
         sid = search.id
+        profile = search.category_profile or _autodetect_profile(search)
     finally:
         session.close()
 
@@ -358,7 +383,7 @@ async def cb_filter_show(
         )
     else:
         lines = [get_text("filters_header", lang, sid=sid, content="")]
-        lines += _filters_lines(filters, lang=lang)
+        lines += _filters_lines(filters, lang=lang, profile=profile)
         await _safe_edit(
             callback,
             "\n".join(lines),
@@ -388,6 +413,7 @@ async def cb_filter_del_start(
             return
         filters = filters_from_json(search.filters_json)
         sid = search.id
+        profile = search.category_profile or _autodetect_profile(search)
     finally:
         session.close()
 
@@ -398,7 +424,7 @@ async def cb_filter_del_start(
             reply_markup=no_filters_kb(sid, lang=lang),
         )
     else:
-        content = "\n".join(_filters_lines(filters, lang=lang))
+        content = "\n".join(_filters_lines(filters, lang=lang, profile=profile))
         text = get_text("filters_header", lang, sid=sid, content=content)
         await _safe_edit(callback, text, reply_markup=filter_items_kb(sid, filters, lang=lang))
 

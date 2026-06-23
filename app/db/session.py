@@ -13,6 +13,7 @@ _REQUIRED_SEARCH_COLUMNS: dict[str, str] = {
     "base_url": "TEXT",
     "filters_json": "TEXT",
     "effective_url": "TEXT",
+    "category_profile": "TEXT",
 }
 
 # Columns that must exist in the user_settings table (name -> SQLite type)
@@ -75,8 +76,15 @@ def _migrate_sqlite(engine) -> None:
                 "route_key TEXT NOT NULL DEFAULT 'other', "
                 "is_active BOOLEAN NOT NULL DEFAULT 1, "
                 "last_seen_external_id TEXT, "
-                "created_at DATETIME NOT NULL)"
+                "created_at DATETIME NOT NULL, "
+                "category_profile TEXT)"
             ))
+        else:
+            if "category_profile" not in gs_existing:
+                logger.info("Migration: adding column 'category_profile' to group_searches")
+                conn.execute(text(
+                    "ALTER TABLE group_searches ADD COLUMN category_profile TEXT"
+                ))
 
         conn.commit()
 
