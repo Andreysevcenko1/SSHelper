@@ -126,8 +126,8 @@ class WatcherService:
                     fetch_url = search.effective_url or search.url
                     listings = await self.parser.fetch_listings(fetch_url, limit=10)
                     await self._process_listings(repo=repo, search=search, listings=listings)
-                except Exception as exc:
-                    logger.warning("Watcher: failed to process search #%d — %s", search.id, exc)
+                except Exception:
+                    logger.exception("Watcher: failed to process search #%d", search.id)
                     continue
         finally:
             session.close()
@@ -188,10 +188,10 @@ class WatcherService:
                     "Watcher: failed to send notification for search #%d listing %s — %s",
                     search.id, listing.external_id, exc,
                 )
-            except Exception as exc:
-                logger.error(
-                    "Watcher: unexpected error sending notification for search #%d — %s",
-                    search.id, exc,
+            except Exception:
+                logger.exception(
+                    "Watcher: unexpected error sending notification for search #%d",
+                    search.id,
                 )
 
             # Group broadcast (feature-flagged, deduped per external_id)
@@ -219,10 +219,11 @@ class WatcherService:
                     thread_id=thread_id,
                     listing=listing,
                 )
-            except Exception as exc:
-                logger.warning(
-                    "Broadcast: failed to send listing %s to thread %s — %s",
-                    listing.external_id, thread_id, exc,
+            except Exception:
+                logger.exception(
+                    "Broadcast: failed to send listing %s to thread %s",
+                    listing.external_id,
+                    thread_id,
                 )
                 return
 
@@ -276,4 +277,3 @@ class WatcherService:
             reply_markup=kb,
             thread_id=thread_id,
         )
-

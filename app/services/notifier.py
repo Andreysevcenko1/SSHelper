@@ -50,6 +50,16 @@ def _present_fields(listing: "Listing") -> list[str]:
     return [f for f in _METADATA_FIELDS if getattr(listing, f, None) is not None]
 
 
+def _image_mode(url: str | None) -> str:
+    """Classify selected image URL for logs: ``hd`` | ``preview`` | ``text``."""
+    if not url:
+        return "text"
+    lowered = url.lower()
+    if any(token in lowered for token in ("/small/", "/thumb/", "/preview/")):
+        return "preview"
+    return "hd"
+
+
 async def send_listing_notification(
     bot: Bot,
     chat_id: int,
@@ -72,18 +82,18 @@ async def send_listing_notification(
     -------
     Emits one INFO line per sent message that includes:
     ``listing_id``, ``deal_type``, ``template_used``, ``fields_present``,
-    ``image_mode`` (``hd`` | ``text_only``), ``chat_id``, ``thread_id``,
+    ``image_mode`` (``hd`` | ``preview`` | ``text``), ``chat_id``, ``thread_id``,
     ``message_id``.
 
     Returns
     -------
-    ``(image_mode, message_id)`` — ``image_mode`` is ``"hd"`` or
-    ``"text_only"``; ``message_id`` may be ``None`` on unexpected errors.
+    ``(image_mode, message_id)`` — ``image_mode`` is ``"hd"``, ``"preview"``,
+    or ``"text"``; ``message_id`` may be ``None`` on unexpected errors.
     """
     deal_type = listing.deal_type
     template = _template_name(deal_type)
     fields_present = _present_fields(listing)
-    hd_url = select_image_url(listing)
+    selected_image_url = select_image_url(listing)
 
     # Truncate caption to Telegram's limit (applies to both photo and text)
     caption = text if len(text) <= _MAX_CAPTION_LEN else text[: _MAX_CAPTION_LEN - 1] + "…"
@@ -95,7 +105,7 @@ async def send_listing_notification(
         deal_type,
         template,
         fields_present,
-        hd_url is not None,
+        selected_image_url is not None,
         chat_id,
         thread_id,
     )
@@ -104,17 +114,17 @@ async def send_listing_notification(
     if thread_id is not None:
         extra_kwargs["message_thread_id"] = thread_id
 
-    if hd_url:
+    if selected_image_url:
         try:
+            mode = _image_mode(selected_image_url)
             msg = await bot.send_photo(
                 chat_id=chat_id,
-                photo=hd_url,
+                photo=selected_image_url,
                 caption=caption,
                 parse_mode="HTML",
                 reply_markup=reply_markup,
                 **extra_kwargs,
             )
-            image_mode = "hd"
             logger.info(
                 "Sent listing=%s deal_type=%s template=%s fields=%s "
                 "image_mode=%s chat=%s thread=%s message_id=%s",
@@ -122,15 +132,15 @@ async def send_listing_notification(
                 deal_type,
                 template,
                 fields_present,
-                image_mode,
+                mode,
                 chat_id,
                 thread_id,
                 msg.message_id,
             )
-            return image_mode, msg.message_id
+            return mode, msg.message_id
         except Exception as exc:
             logger.warning(
-                "send_photo failed for listing=%s (%s) — falling back to text_only",
+                "send_photo failed for listing=%s (%s) — falling back to text",
                 listing.external_id,
                 exc,
             )
@@ -143,7 +153,7 @@ async def send_listing_notification(
         reply_markup=reply_markup,
         **extra_kwargs,
     )
-    image_mode = "text_only"
+    image_mode = "text"
     logger.info(
         "Sent listing=%s deal_type=%s template=%s fields=%s "
         "image_mode=%s chat=%s thread=%s message_id=%s",

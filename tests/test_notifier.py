@@ -154,7 +154,7 @@ class TestSendListingNotificationHD:
 class TestSendListingNotificationNoPreviewFallback:
     @pytest.mark.asyncio
     async def test_falls_back_to_text_on_send_photo_failure(self):
-        """When send_photo fails, must go to text_only — no preview retry."""
+        """When send_photo fails, must go to text — no preview retry."""
         listing = _listing(
             image_url_hd="https://i.ss.lv/img/cl/large/abc/1.jpg",
             image_url_preview="https://i.ss.lv/img/cl/small/abc/1.jpg",
@@ -166,7 +166,7 @@ class TestSendListingNotificationNoPreviewFallback:
             bot=bot, chat_id=1, listing=listing, text="Text", reply_markup=kb
         )
 
-        assert image_mode == "text_only"
+        assert image_mode == "text"
         # send_photo was called once (HD attempt), NOT twice (no preview retry)
         assert bot.send_photo.call_count == 1
         bot.send_message.assert_called_once()
@@ -186,13 +186,13 @@ class TestSendListingNotificationNoPreviewFallback:
             bot=bot, chat_id=1, listing=listing, text="Text", reply_markup=kb
         )
 
-        assert image_mode == "text_only"
+        assert image_mode == "text"
         bot.send_photo.assert_not_called()
         bot.send_message.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_preview_only_listing_sends_text(self):
-        """Listing with only image_url_preview → text_only (no thumbnail sent)."""
+    async def test_preview_only_listing_sends_preview(self):
+        """Listing with only image_url_preview is sent as preview (last resort)."""
         listing = _listing(
             image_url_hd=None,
             photo_urls=[],
@@ -205,8 +205,8 @@ class TestSendListingNotificationNoPreviewFallback:
             bot=bot, chat_id=1, listing=listing, text="Text", reply_markup=kb
         )
 
-        assert image_mode == "text_only"
-        bot.send_photo.assert_not_called()
+        assert image_mode == "preview"
+        bot.send_photo.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

@@ -65,10 +65,10 @@ class GroupWatcherService:
                     fetch_url = search.effective_url or search.url
                     listings = await self.parser.fetch_listings(fetch_url, limit=10)
                     await self._process_listings(repo=repo, search=search, listings=listings)
-                except Exception as exc:
-                    logger.warning(
-                        "GroupWatcher: failed to process group search #%d — %s",
-                        search.id, exc,
+                except Exception:
+                    logger.exception(
+                        "GroupWatcher: failed to process group search #%d",
+                        search.id,
                     )
         finally:
             session.close()
@@ -126,17 +126,19 @@ class GroupWatcherService:
             )
             return
 
-        for listing in new_listings[:5]:
+        for raw_listing in new_listings[:5]:
+            listing = await self.parser.fetch_and_enrich_listing(raw_listing)
             try:
                 await self._send_group_notification(
                     chat_id=self.config.broadcast_chat_id,  # type: ignore[arg-type]
                     thread_id=thread_id,
                     listing=listing,
                 )
-            except Exception as exc:
-                logger.warning(
-                    "GroupWatcher: failed to send listing %s to thread %s — %s",
-                    listing.external_id, thread_id, exc,
+            except Exception:
+                logger.exception(
+                    "GroupWatcher: failed to send listing %s to thread %s",
+                    listing.external_id,
+                    thread_id,
                 )
 
     async def _send_group_notification(
