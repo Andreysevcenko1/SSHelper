@@ -1,6 +1,8 @@
+import dataclasses
 from dataclasses import dataclass, field
 import logging
 import re
+import unicodedata
 from urllib.parse import urljoin
 
 import aiohttp
@@ -25,6 +27,7 @@ class Listing:
     floor_current: int | None = None
     floor_total: int | None = None
     house_type: str | None = None
+    series: str | None = None
     price_total_eur: float | None = None
     price_per_m2_eur: float | None = None
     price_monthly_eur: float | None = None
@@ -221,6 +224,198 @@ def _parse_location(
     return None, None
 
 
+# ---------------------------------------------------------------------------
+# Detail-page parsing helpers
+# ---------------------------------------------------------------------------
+
+def _normalize_label(text: str) -> str:
+    """Lowercase, strip diacritics and normalise whitespace for label matching."""
+    nfkd = unicodedata.normalize("NFKD", text.lower().strip())
+    stripped = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", stripped).strip()
+
+
+# Maps normalised Latvian label → internal field key
+_DETAIL_LABEL_MAP: dict[str, str] = {
+    "pilseta": "city",
+    "rajons": "district",
+    "iela": "street",
+    "istabas": "rooms",
+    "platiba": "area_m2",
+    "stavs": "floor",
+    "serija": "series",
+    "majas tips": "house_type",
+    "cena": "price_raw",
+}
+
+
+def _apply_detail_field(label: str, value: str, result: dict) -> None:
+    """Map a Latvian label/value pair into *result* using :data:`_DETAIL_LABEL_MAP`."""
+    field_key = _DETAIL_LABEL_MAP.get(_normalize_label(label))
+    if field_key is None:
+        return
+
+    if field_key == "city":
+        result["city"] = value
+    elif field_key == "district":
+        result["district"] = value
+    elif field_key == "street":
+        result["street"] = value
+    elif field_key == "rooms":
+        parsed = _try_parse_rooms(value)
+        if parsed is not None:
+            result["rooms"] = parsed
+    elif field_key == "area_m2":
+        parsed = _try_parse_area(value)
+        if parsed is not None:
+            result["area_m2"] = parsed
+    elif field_key == "floor":
+        parsed = _try_parse_floor(value)
+        if parsed is not None:
+            result["floor_current"], result["floor_total"] = parsed
+    elif field_key == "series":
+        result["series"] = value
+    elif field_key == "house_type":
+        result["house_type"] = value
+    elif field_key == "price_raw":
+        result["price_raw"] = value
+
+
+def _parse_spec_table(table: Tag, result: dict) -> None:
+    """Parse ``(ads_opt_name, ads_opt)`` cell pairs from an SS.lv spec table."""
+    for row in table.find_all("tr"):
+        cells = row.find_all("td")
+        i = 0
+        while i + 1 < len(cells):
+            cell = cells[i]
+            if "ads_opt_name" in (cell.get("class") or []):
+                label = cell.get_text(strip=True)
+                value = cells[i + 1].get_text(" ", strip=True)
+                if label and value:
+                    _apply_detail_field(label, value, result)
+                i += 2
+            else:
+                i += 1
+
+
+def _extract_detail_image(soup: BeautifulSoup) -> str | None:
+    """Return the best (largest) image URL found on a detail page, or ``None``."""
+    from app.services.formatter import upgrade_image_url
+
+    # Prefer explicit links to large images
+    for a in soup.find_all("a", href=True):
+        href = str(a.get("href", "")).strip()
+        if "/large/" in href and re.search(r"\.(jpe?g|png|webp)$", href, re.IGNORECASE):
+            return href
+
+    # Fall back to <img> tags — prefer /large/ paths, skip icons / navigation
+    best: str | None = None
+    for img in soup.find_all("img", src=True):
+        src = str(img.get("src", "")).strip()
+        if not src or src.endswith(".gif"):
+            continue
+        if any(seg in src for seg in ("/nav/", "/icon", "/logo")):
+            continue
+        if "/large/" in src:
+            return src
+        if best is None:
+            best = src
+
+    if best:
+        return upgrade_image_url(best)
+    return None
+
+
+def parse_detail_page(html: str) -> dict:
+    """
+    Parse an SS.lv listing detail page and return a raw data dict.
+
+    Possible keys (all optional):
+    ``city``, ``district``, ``street``, ``rooms``, ``area_m2``,
+    ``floor_current``, ``floor_total``, ``series``, ``house_type``,
+    ``price_raw``, ``image_url_hd``.
+
+    Never raises — returns an empty dict when nothing is found.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    result: dict = {}
+
+    # Locate spec table
+    spec_table: Tag | None = soup.find("table", class_="ads_parameters")  # type: ignore[assignment]
+    if spec_table is None:
+        name_cell = soup.find("td", class_="ads_opt_name")
+        if name_cell is not None:
+            spec_table = name_cell.find_parent("table")
+
+    if spec_table is not None:
+        _parse_spec_table(spec_table, result)
+
+    # Dedicated price element fallback (when not in the spec table)
+    if "price_raw" not in result:
+        for selector in (".price_modif", "#tdo_8", ".ads_price"):
+            elem = soup.select_one(selector)
+            if elem:
+                text = elem.get_text(" ", strip=True)
+                if text:
+                    result["price_raw"] = text
+                    break
+
+    # Best image from detail/gallery
+    image_url_hd = _extract_detail_image(soup)
+    if image_url_hd:
+        result["image_url_hd"] = image_url_hd
+
+    return result
+
+
+def enrich_listing_from_detail(listing: "Listing", detail_data: dict) -> "Listing":
+    """
+    Return a copy of *listing* enriched with fields parsed from its detail page.
+
+    Fields present in *detail_data* override the corresponding list-page values.
+    The original *listing* is never mutated.  Returns the original object
+    unchanged when *detail_data* is empty.
+    """
+    if not detail_data:
+        return listing
+
+    kwargs: dict = {}
+
+    for fname in (
+        "city", "district", "street", "rooms", "area_m2",
+        "floor_current", "floor_total", "series", "house_type",
+    ):
+        if fname in detail_data:
+            kwargs[fname] = detail_data[fname]
+
+    # Resolve area for price-per-m² computation
+    area = kwargs.get("area_m2") or listing.area_m2
+
+    # Detail-page price overrides list-page price
+    price_raw = detail_data.get("price_raw")
+    if price_raw:
+        total, monthly, per_m2 = _parse_price_fields(price_raw, listing.deal_type, area)
+        if total is not None:
+            kwargs["price_total_eur"] = total
+        if monthly is not None:
+            kwargs["price_monthly_eur"] = monthly
+        if per_m2 is not None:
+            kwargs["price_per_m2_eur"] = per_m2
+        kwargs["price"] = price_raw
+
+    # HD image from gallery
+    image_url_hd = detail_data.get("image_url_hd")
+    if image_url_hd:
+        kwargs["image_url_hd"] = image_url_hd
+        if not listing.image_url_preview:
+            kwargs["image_url_preview"] = image_url_hd
+
+    if not kwargs:
+        return listing
+
+    return dataclasses.replace(listing, **kwargs)
+
+
 _ID_RE = re.compile(r"(\d{5,})")
 
 _CATEGORY_MAP = {
@@ -384,6 +579,32 @@ class SSParser:
             if match:
                 return match.group(1)
         return None
+
+    async def _fetch_detail_page_data(self, url: str) -> dict:
+        """Fetch *url* and return parsed detail-page data dict."""
+        timeout = aiohttp.ClientTimeout(total=20)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers={"User-Agent": "Mozilla/5.0"}) as response:
+                response.raise_for_status()
+                html = await response.text()
+        return parse_detail_page(html)
+
+    async def fetch_and_enrich_listing(self, listing: Listing) -> Listing:
+        """
+        Fetch the detail page for *listing* and return an enriched copy.
+
+        Falls back to returning the original *listing* unchanged on any
+        network or parse error so the caller never has to handle exceptions.
+        """
+        try:
+            detail_data = await self._fetch_detail_page_data(listing.url)
+            return enrich_listing_from_detail(listing, detail_data)
+        except Exception as exc:
+            logger.warning(
+                "Parser: detail fetch/enrich failed for listing %s — %s",
+                listing.external_id, exc,
+            )
+            return listing
 
     async def discover_available_filters(self, search_url: str) -> dict:
         """
