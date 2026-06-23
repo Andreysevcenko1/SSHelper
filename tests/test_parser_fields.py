@@ -4,6 +4,7 @@ import pytest
 from bs4 import BeautifulSoup
 
 from app.services.ss_parser import (
+    Listing,
     SSParser,
     _parse_location,
     _parse_price_fields,
@@ -11,7 +12,9 @@ from app.services.ss_parser import (
     _try_parse_area,
     _try_parse_floor,
     _try_parse_rooms,
+    enrich_listing_from_detail,
     normalize_price_eur,
+    parse_detail_page,
 )
 
 
@@ -331,3 +334,252 @@ class TestParseListings:
         html = f"<html><body><table>{rows}</table></body></html>"
         listings = SSParser()._parse_listings(html=html, base_url="https://ss.lv/", limit=2)
         assert len(listings) == 2
+
+
+# ---------------------------------------------------------------------------
+# Fixture for detail-page parsing
+# ---------------------------------------------------------------------------
+
+_DETAIL_HTML = """
+<html><body>
+<div class="msg_container">
+  <table class="ads_parameters">
+    <tr>
+      <td class="ads_opt_name">Pilsēta</td>
+      <td class="ads_opt">Rīga</td>
+      <td class="ads_opt_name">Rajons</td>
+      <td class="ads_opt">centrs</td>
+    </tr>
+    <tr>
+      <td class="ads_opt_name">Iela</td>
+      <td class="ads_opt">Veru 3</td>
+      <td class="ads_opt_name">Istabas</td>
+      <td class="ads_opt">3</td>
+    </tr>
+    <tr>
+      <td class="ads_opt_name">Platība</td>
+      <td class="ads_opt">63 m²</td>
+      <td class="ads_opt_name">Stāvs</td>
+      <td class="ads_opt">1/5</td>
+    </tr>
+    <tr>
+      <td class="ads_opt_name">Sērija</td>
+      <td class="ads_opt">P. kara</td>
+      <td class="ads_opt_name">Mājas tips</td>
+      <td class="ads_opt">Mūra</td>
+    </tr>
+    <tr>
+      <td class="ads_opt_name">Cena</td>
+      <td class="ads_opt">125 000 €</td>
+    </tr>
+  </table>
+  <img src="https://i.ss.lv/img/cl/large/a/b/12345.jpg" />
+</div>
+</body></html>
+"""
+
+_DETAIL_HTML_NBSP_PRICE = """
+<html><body>
+<table class="ads_parameters">
+  <tr>
+    <td class="ads_opt_name">Cena</td>
+    <td class="ads_opt">125\u00a0000\u00a0€</td>
+  </tr>
+</table>
+</body></html>
+"""
+
+_DETAIL_HTML_RENT = """
+<html><body>
+<table class="ads_parameters">
+  <tr>
+    <td class="ads_opt_name">Cena</td>
+    <td class="ads_opt">3 500 €/mēn</td>
+  </tr>
+</table>
+</body></html>
+"""
+
+
+# ---------------------------------------------------------------------------
+# parse_detail_page
+# ---------------------------------------------------------------------------
+
+class TestParseDetailPage:
+    def test_city(self):
+        data = parse_detail_page(_DETAIL_HTML)
+        assert data["city"] == "Rīga"
+
+    def test_district(self):
+        data = parse_detail_page(_DETAIL_HTML)
+        assert data["district"] == "centrs"
+
+    def test_street(self):
+        data = parse_detail_page(_DETAIL_HTML)
+        assert data["street"] == "Veru 3"
+
+    def test_rooms(self):
+        data = parse_detail_page(_DETAIL_HTML)
+        assert data["rooms"] == 3
+
+    def test_area_m2(self):
+        data = parse_detail_page(_DETAIL_HTML)
+        assert data["area_m2"] == 63.0
+
+    def test_floor_current(self):
+        data = parse_detail_page(_DETAIL_HTML)
+        assert data["floor_current"] == 1
+
+    def test_floor_total(self):
+        data = parse_detail_page(_DETAIL_HTML)
+        assert data["floor_total"] == 5
+
+    def test_series(self):
+        data = parse_detail_page(_DETAIL_HTML)
+        assert data["series"] == "P. kara"
+
+    def test_house_type(self):
+        data = parse_detail_page(_DETAIL_HTML)
+        assert data["house_type"] == "Mūra"
+
+    def test_price_raw(self):
+        data = parse_detail_page(_DETAIL_HTML)
+        assert data["price_raw"] == "125 000 €"
+
+    def test_image_url_hd(self):
+        data = parse_detail_page(_DETAIL_HTML)
+        assert data.get("image_url_hd") == "https://i.ss.lv/img/cl/large/a/b/12345.jpg"
+
+    def test_missing_spec_table_no_crash(self):
+        data = parse_detail_page("<html><body><p>No spec table</p></body></html>")
+        assert isinstance(data, dict)
+        assert "city" not in data
+
+    def test_empty_html_no_crash(self):
+        data = parse_detail_page("")
+        assert isinstance(data, dict)
+
+    def test_case_insensitive_label_matching(self):
+        html = """<html><body>
+        <table class="ads_parameters">
+          <tr>
+            <td class="ads_opt_name">MĀJAS TIPS</td>
+            <td class="ads_opt">Mūra</td>
+          </tr>
+        </table></body></html>"""
+        data = parse_detail_page(html)
+        assert data.get("house_type") == "Mūra"
+
+    def test_nbsp_price_parsed(self):
+        data = parse_detail_page(_DETAIL_HTML_NBSP_PRICE)
+        assert data.get("price_raw") is not None
+        # Must contain digits, not truncated
+        assert "125" in data["price_raw"]
+
+
+# ---------------------------------------------------------------------------
+# enrich_listing_from_detail
+# ---------------------------------------------------------------------------
+
+def _base_listing(**kwargs) -> Listing:
+    defaults = dict(
+        external_id="99999",
+        title="Test",
+        url="https://ss.lv/msg/lv/real-estate/flats/riga/sell/99999/",
+        deal_type="sell",
+    )
+    defaults.update(kwargs)
+    return Listing(**defaults)
+
+
+class TestEnrichListingFromDetail:
+    def test_fields_populated(self):
+        listing = _base_listing()
+        detail = {
+            "city": "Rīga",
+            "district": "centrs",
+            "street": "Veru 3",
+            "rooms": 3,
+            "area_m2": 63.0,
+            "floor_current": 1,
+            "floor_total": 5,
+            "series": "P. kara",
+            "house_type": "Mūra",
+            "price_raw": "125 000 €",
+        }
+        enriched = enrich_listing_from_detail(listing, detail)
+        assert enriched.city == "Rīga"
+        assert enriched.district == "centrs"
+        assert enriched.street == "Veru 3"
+        assert enriched.rooms == 3
+        assert enriched.area_m2 == 63.0
+        assert enriched.floor_current == 1
+        assert enriched.floor_total == 5
+        assert enriched.series == "P. kara"
+        assert enriched.house_type == "Mūra"
+
+    def test_sell_price_total(self):
+        listing = _base_listing(deal_type="sell")
+        detail = {"price_raw": "125 000 €"}
+        enriched = enrich_listing_from_detail(listing, detail)
+        assert enriched.price_total_eur == 125000.0
+        assert enriched.price_monthly_eur is None
+
+    def test_sell_price_per_m2_computed(self):
+        listing = _base_listing(deal_type="sell")
+        detail = {"price_raw": "125 000 €", "area_m2": 63.0}
+        enriched = enrich_listing_from_detail(listing, detail)
+        assert enriched.price_per_m2_eur == pytest.approx(125000 / 63, rel=1e-3)
+
+    def test_rent_price_monthly(self):
+        listing = _base_listing(deal_type="rent")
+        detail = {"price_raw": "3 500 €/mēn"}
+        enriched = enrich_listing_from_detail(listing, detail)
+        assert enriched.price_monthly_eur == 3500.0
+        assert enriched.price_total_eur is None
+
+    def test_original_unchanged(self):
+        listing = _base_listing()
+        detail = {"city": "Rīga"}
+        enriched = enrich_listing_from_detail(listing, detail)
+        assert enriched is not listing
+        assert listing.city is None
+
+    def test_empty_detail_returns_same_object(self):
+        listing = _base_listing()
+        result = enrich_listing_from_detail(listing, {})
+        assert result is listing
+
+    def test_image_url_hd_enriched(self):
+        listing = _base_listing()
+        detail = {"image_url_hd": "https://i.ss.lv/img/cl/large/a/b/1.jpg"}
+        enriched = enrich_listing_from_detail(listing, detail)
+        assert enriched.image_url_hd == "https://i.ss.lv/img/cl/large/a/b/1.jpg"
+
+
+# ---------------------------------------------------------------------------
+# Price parsing regression — no truncation
+# ---------------------------------------------------------------------------
+
+class TestPriceParsingRegression:
+    def test_125000_spaces(self):
+        assert normalize_price_eur("125 000 €") == 125000.0
+
+    def test_125000_nbsp(self):
+        assert normalize_price_eur("125\u00a0000\u00a0€") == 125000.0
+
+    def test_3500_monthly(self):
+        assert normalize_price_eur("3 500 €/mēn") == 3500.0
+
+    def test_1984_per_m2(self):
+        assert normalize_price_eur("1 984 €/m²") == 1984.0
+
+    def test_no_truncation_to_single_digit(self):
+        """Regression: '125 000 €' must never produce a value < 100."""
+        result = normalize_price_eur("125 000 €")
+        assert result is not None
+        assert result >= 100
+
+    def test_3_eur_is_not_result_of_125000(self):
+        """'125 000 €' must not parse to 3."""
+        assert normalize_price_eur("125 000 €") != 3.0

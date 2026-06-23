@@ -174,7 +174,8 @@ class WatcherService:
         lang = self._resolve_user_lang(search.user_id)
 
         # Send notifications for new listings (newest first, up to 5)
-        for listing in new_listings[:5]:
+        for raw_listing in new_listings[:5]:
+            listing = await self.parser.fetch_and_enrich_listing(raw_listing)
             try:
                 await self._send_notification(
                     chat_id=search.user_id,

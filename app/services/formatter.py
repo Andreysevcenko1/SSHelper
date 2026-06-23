@@ -200,6 +200,7 @@ def format_sell_message(listing: "Listing") -> str:
         _opt_line("🛏 Комнат", listing.rooms),
         _opt_line("📐 Площадь", area_str),
         _opt_line("🏢 Этаж", floor_str),
+        _opt_line("🏗 Серия", listing.series),
         _opt_line("🧱 Тип дома", listing.house_type),
         _opt_line("💶 Цена за м²", per_m2_str),
         _opt_line("💰 Полная цена", total_str),
@@ -226,6 +227,7 @@ def format_rent_message(listing: "Listing") -> str:
         _opt_line("🛏 Комнат", listing.rooms),
         _opt_line("📐 Площадь", area_str),
         _opt_line("🏢 Этаж", floor_str),
+        _opt_line("🏗 Серия", listing.series),
         _opt_line("🧱 Тип дома", listing.house_type),
         _opt_line("💶 Цена в месяц", monthly_str),
     ]:
