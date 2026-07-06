@@ -2,11 +2,20 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import AsyncMock
 
+import pytest
 import app.services.group_watcher as group_watcher_module
 import app.services.watcher as watcher_module
 from app.services.formatter import format_listing_message
-from app.services.ss_parser import Listing, enrich_listing_from_detail, parse_detail_page
+from app.services.ss_parser import (
+    DetailFetchError,
+    DetailFetchMeta,
+    Listing,
+    SSParser,
+    enrich_listing_from_detail,
+    parse_detail_page,
+)
 
 
 _FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -73,3 +82,60 @@ def test_regression_no_truncated_fragments_in_detail_template():
 def test_group_and_individual_watchers_use_same_cars_rendering():
     listing = _build_enriched_car_listing()
     assert watcher_module.format_listing_message(listing) == group_watcher_module.format_listing_message(listing)
+
+
+def test_cars_fallback_always_contains_cena_line():
+    listing = Listing(
+        external_id="57186837",
+        title="Skoda Superb",
+        url="https://www.ss.lv/msg/lv/transport/cars/skoda/superb/cdbfxb.html",
+        deal_type="unknown",
+        detail_fetch_ok=False,
+        detail_parse_error="timeout",
+        detail_raw_cena=None,
+        price=None,
+    )
+    body = format_listing_message(listing)
+    assert "Cena: nav norādīta" in body
+    assert "Saite: https://www.ss.lv/msg/lv/transport/cars/skoda/superb/cdbfxb.html" in body
+
+
+def test_altered_structure_extracts_price_and_one_car_field():
+    html = """
+    <html><body>
+      <div>Marka: Audi A6</div>
+      <div>Tehniskā apskate: 11.2026</div>
+      <div>Cena: 8 500 €</div>
+    </body></html>
+    """
+    detail = parse_detail_page(html)
+    assert detail.get("price_raw") == "8 500 €"
+    assert detail.get("car_make") == "Audi A6"
+
+
+@pytest.mark.asyncio
+async def test_timeout_fetch_uses_cars_fallback_with_cena():
+    parser = SSParser()
+    parser._fetch_detail_page_data = AsyncMock(  # type: ignore[method-assign]
+        side_effect=DetailFetchError(
+            DetailFetchMeta(
+                http_status=None,
+                content_length=None,
+                retry_count=2,
+                parse_stage="fetch",
+                exception_type="TimeoutError",
+                exception_message="request timed out",
+            )
+        )
+    )
+    listing = Listing(
+        external_id="57186837",
+        title="Skoda Superb",
+        url="https://www.ss.lv/msg/lv/transport/cars/skoda/superb/cdbfxb.html",
+        price="6 999 €",
+    )
+    enriched = await parser.fetch_and_enrich_listing(listing)
+    body = format_listing_message(enriched)
+    assert "Cena: 6 999 €" in body
+    assert "Marka/Modelis: Skoda Superb" in body
+    assert "<b>" not in body

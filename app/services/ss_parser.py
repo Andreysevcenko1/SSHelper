@@ -1,4 +1,5 @@
 import dataclasses
+import asyncio
 from dataclasses import dataclass, field
 import logging
 import re
@@ -48,6 +49,12 @@ class Listing:
     car_color: str | None = None
     car_body_type: str | None = None
     car_technical_inspection: str | None = None
+    detail_http_status: int | None = None
+    detail_content_length: int | None = None
+    detail_retry_count: int = 0
+    detail_parse_stage: str | None = None
+    detail_exception_type: str | None = None
+    detail_exception_message: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +362,52 @@ def _parse_spec_table(table: Tag, result: dict) -> list[str]:
     return parsed_labels
 
 
+def _parse_spec_pairs_globally(soup: BeautifulSoup, result: dict) -> list[str]:
+    """Parse label/value pairs from global ads_opt_* cells without relying on one table."""
+    parsed_labels: list[str] = []
+    label_cells = soup.find_all("td", class_=lambda c: c and ("ads_opt_name" in c or "ads_opt_name_big" in c))
+    for label_cell in label_cells:
+        value_cell = label_cell.find_next_sibling("td")
+        if value_cell is None:
+            continue
+        label = label_cell.get_text(" ", strip=True)
+        value = value_cell.get_text(" ", strip=True)
+        if not label or not value:
+            continue
+        parsed = _apply_detail_field(label, value, result)
+        if parsed is not None:
+            parsed_labels.append(parsed)
+    return parsed_labels
+
+
+def _parse_label_value_lines(text: str, result: dict) -> list[str]:
+    """Tertiary parser: parse simple `Label: Value` lines from cleaned page text."""
+    parsed_labels: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if ":" not in line:
+            continue
+        label, value = line.split(":", 1)
+        label = label.strip()
+        value = value.strip()
+        if not label or not value:
+            continue
+        parsed = _apply_detail_field(label, value, result)
+        if parsed is not None:
+            parsed_labels.append(parsed)
+    return parsed_labels
+
+
+_PRICE_TEXT_RE = re.compile(r"\d[\d\s\u00a0\u202f.,]*\s*(?:€|EUR)\b", re.IGNORECASE)
+
+
+def _extract_price_from_text(text: str) -> str | None:
+    match = _PRICE_TEXT_RE.search(text)
+    if not match:
+        return None
+    return re.sub(r"\s+", " ", match.group(0)).strip()
+
+
 def _extract_detail_image(soup: BeautifulSoup) -> str | None:
     """Return the best image URL found on a detail page, or ``None``."""
     from app.services.formatter import upgrade_image_url
@@ -408,16 +461,21 @@ def parse_detail_page(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
     result: dict = {}
 
-    # Locate spec table
-    spec_table: Tag | None = soup.find("table", class_="ads_parameters")  # type: ignore[assignment]
-    if spec_table is None:
-        name_cell = soup.find("td", class_="ads_opt_name")
-        if name_cell is not None:
-            spec_table = name_cell.find_parent("table")
-
     parsed_labels: list[str] = []
-    if spec_table is not None:
-        parsed_labels = _parse_spec_table(spec_table, result)
+
+    # Primary strategy: known detail table containers.
+    primary_tables = soup.select("table.ads_parameters, table.options_list table")
+    for table in primary_tables:
+        parsed_labels.extend(_parse_spec_table(table, result))
+
+    # Secondary strategy: scan global row-like label/value td pairs.
+    if not parsed_labels:
+        parsed_labels.extend(_parse_spec_pairs_globally(soup, result))
+
+    # Tertiary strategy: parse label:value lines from cleaned text.
+    if not parsed_labels:
+        full_text = soup.get_text("\n", strip=True)
+        parsed_labels.extend(_parse_label_value_lines(full_text, result))
 
     # Dedicated price element fallback (when not in the spec table)
     if "price_raw" not in result:
@@ -429,6 +487,11 @@ def parse_detail_page(html: str) -> dict:
                     result["price_raw"] = text
                     parsed_labels.append("cena")
                     break
+    if "price_raw" not in result:
+        text_price = _extract_price_from_text(soup.get_text(" ", strip=True))
+        if text_price:
+            result["price_raw"] = text_price
+            parsed_labels.append("cena")
 
     # Best image from detail/gallery
     image_url_hd = _extract_detail_image(soup)
@@ -437,6 +500,28 @@ def parse_detail_page(html: str) -> dict:
     result["parsed_labels"] = sorted(set(parsed_labels))
 
     return result
+
+
+@dataclass
+class DetailFetchMeta:
+    http_status: int | None = None
+    content_length: int | None = None
+    retry_count: int = 0
+    parse_stage: str = "fetch"
+    exception_type: str | None = None
+    exception_message: str | None = None
+
+
+class DetailFetchError(RuntimeError):
+    def __init__(self, meta: DetailFetchMeta) -> None:
+        super().__init__(f"{meta.parse_stage}:{meta.exception_type}:{meta.exception_message}")
+        self.meta = meta
+
+
+def _exception_details(exc: Exception) -> tuple[str, str]:
+    exc_type = exc.__class__.__name__
+    exc_message = str(exc).strip() or "<empty>"
+    return exc_type, exc_message
 
 
 def enrich_listing_from_detail(listing: "Listing", detail_data: dict) -> "Listing":
@@ -654,14 +739,51 @@ class SSParser:
                 return match.group(1)
         return None
 
-    async def _fetch_detail_page_data(self, url: str) -> dict:
-        """Fetch *url* and return parsed detail-page data dict."""
-        timeout = aiohttp.ClientTimeout(total=20)
+    async def _fetch_detail_page_data(self, url: str) -> tuple[dict, DetailFetchMeta]:
+        """Fetch *url* with retries and return `(parsed_detail_data, fetch_meta)`."""
+        max_retries = 2
+        timeout = aiohttp.ClientTimeout(total=12, connect=5, sock_read=10)
+        meta = DetailFetchMeta()
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers={"User-Agent": "Mozilla/5.0"}) as response:
-                response.raise_for_status()
-                html = await response.text()
-        return parse_detail_page(html)
+            for attempt in range(max_retries + 1):
+                meta.retry_count = attempt
+                try:
+                    async with session.get(url, headers={"User-Agent": "Mozilla/5.0"}) as response:
+                        meta.http_status = response.status
+                        body_bytes = await response.read()
+                        meta.content_length = len(body_bytes)
+
+                        if response.status != 200:
+                            raise aiohttp.ClientResponseError(
+                                request_info=response.request_info,
+                                history=response.history,
+                                status=response.status,
+                                message=f"unexpected status {response.status}",
+                                headers=response.headers,
+                            )
+                        if not body_bytes:
+                            raise ValueError("empty response body")
+
+                        meta.parse_stage = "decode"
+                        try:
+                            html = body_bytes.decode(response.charset or "utf-8")
+                        except UnicodeDecodeError:
+                            html = body_bytes.decode("utf-8", errors="replace")
+                        if not html.strip():
+                            raise ValueError("decoded body is empty")
+
+                        meta.parse_stage = "selector"
+                        detail_data = parse_detail_page(html)
+                        meta.parse_stage = "normalize"
+                        return detail_data, meta
+                except Exception as exc:  # noqa: BLE001
+                    exc_type, exc_message = _exception_details(exc if isinstance(exc, Exception) else Exception(str(exc)))
+                    meta.exception_type = exc_type
+                    meta.exception_message = exc_message
+                    if attempt < max_retries:
+                        await asyncio.sleep(0.25 * (attempt + 1))
+                        continue
+                    raise DetailFetchError(meta) from exc
 
     async def fetch_and_enrich_listing(self, listing: Listing) -> Listing:
         """
@@ -675,8 +797,8 @@ class SSParser:
         is_cars = profile == "cars"
         is_detail_profile = is_flats or is_cars
         try:
-            detail_data = await self._fetch_detail_page_data(listing.url)
-        except Exception as exc:
+            detail_data, fetch_meta = await self._fetch_detail_page_data(listing.url)
+        except DetailFetchError as exc:
             if not is_detail_profile:
                 logger.exception(
                     "Parser: detail fetch/enrich failed for listing %s",
@@ -684,19 +806,35 @@ class SSParser:
                 )
                 return listing
             category = "flats" if is_flats else "cars"
+            fallback_price = listing.price
+            fallback_price_source = "card" if fallback_price else "none"
             logger.warning(
-                "Parser: %s detail fetch failed listing_id=%s url=%s error=%s",
+                "Parser: %s detail fetch failed listing_id=%s url=%s http_status=%s "
+                "content_length=%s retry_count=%s parse_stage=%s exception_type=%s exception_message=%s "
+                "fallback_price_source=%s final_template=fallback_minimal",
                 category,
                 listing.external_id,
                 listing.url,
-                exc,
+                exc.meta.http_status,
+                exc.meta.content_length,
+                exc.meta.retry_count,
+                exc.meta.parse_stage,
+                exc.meta.exception_type,
+                exc.meta.exception_message,
+                fallback_price_source,
             )
             return dataclasses.replace(
                 listing,
                 detail_fetch_ok=False,
-                detail_parse_error=str(exc),
+                detail_parse_error=f"{exc.meta.exception_type}: {exc.meta.exception_message}",
                 detail_parsed_labels=[],
-                detail_raw_cena=None,
+                detail_raw_cena=fallback_price,
+                detail_http_status=exc.meta.http_status,
+                detail_content_length=exc.meta.content_length,
+                detail_retry_count=exc.meta.retry_count,
+                detail_parse_stage=exc.meta.parse_stage,
+                detail_exception_type=exc.meta.exception_type,
+                detail_exception_message=exc.meta.exception_message,
             )
 
         if not is_detail_profile:
@@ -707,19 +845,33 @@ class SSParser:
         if not parsed_labels:
             parse_error = "no_detail_labels_parsed"
             category = "flats" if is_flats else "cars"
+            fallback_price_source = "raw_text" if raw_cena else ("card" if listing.price else "none")
             logger.warning(
-                "Parser: %s detail parse failed listing_id=%s url=%s error=%s",
+                "Parser: %s detail parse failed listing_id=%s url=%s http_status=%s "
+                "content_length=%s retry_count=%s parse_stage=normalize exception_type=%s exception_message=%s "
+                "fallback_price_source=%s final_template=fallback_minimal",
                 category,
                 listing.external_id,
                 listing.url,
+                fetch_meta.http_status,
+                fetch_meta.content_length,
+                fetch_meta.retry_count,
+                "ParseError",
                 parse_error,
+                fallback_price_source,
             )
             return dataclasses.replace(
                 listing,
                 detail_fetch_ok=False,
                 detail_parse_error=parse_error,
                 detail_parsed_labels=[],
-                detail_raw_cena=raw_cena,
+                detail_raw_cena=raw_cena or listing.price,
+                detail_http_status=fetch_meta.http_status,
+                detail_content_length=fetch_meta.content_length,
+                detail_retry_count=fetch_meta.retry_count,
+                detail_parse_stage="normalize",
+                detail_exception_type="ParseError",
+                detail_exception_message=parse_error,
             )
 
         enriched = enrich_listing_from_detail(listing, detail_data)
@@ -729,6 +881,12 @@ class SSParser:
             detail_parse_error=None,
             detail_parsed_labels=list(parsed_labels),
             detail_raw_cena=raw_cena,
+            detail_http_status=fetch_meta.http_status,
+            detail_content_length=fetch_meta.content_length,
+            detail_retry_count=fetch_meta.retry_count,
+            detail_parse_stage="normalize",
+            detail_exception_type=None,
+            detail_exception_message=None,
         )
 
     async def discover_available_filters(self, search_url: str) -> dict:

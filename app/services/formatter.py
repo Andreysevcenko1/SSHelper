@@ -258,6 +258,37 @@ def _format_area_lv(area_m2: float | None) -> str | None:
     return f"{display} m²"
 
 
+_TITLE_PRICE_RE = re.compile(r"\d[\d\s\u00a0\u202f.,]*\s*(?:€|EUR)\b", re.IGNORECASE)
+
+
+def _extract_price_from_text(text: str | None) -> str | None:
+    if not text:
+        return None
+    match = _TITLE_PRICE_RE.search(text)
+    if not match:
+        return None
+    return _normalize_spaces(match.group(0))
+
+
+def _cars_fallback_price(listing: "Listing") -> tuple[str, str]:
+    if listing.price and str(listing.price).strip():
+        return str(listing.price).strip(), "card"
+    title_price = _extract_price_from_text(listing.title)
+    if title_price:
+        return title_price, "title"
+    raw_price = listing.detail_raw_cena and str(listing.detail_raw_cena).strip()
+    if raw_price:
+        return str(raw_price), "raw_text"
+    return "nav norādīta", "none"
+
+
+def _cars_model_fallback(listing: "Listing") -> str:
+    if getattr(listing, "car_make", None):
+        return str(listing.car_make).strip()
+    title = listing.title.strip()
+    return title if title else "nav norādīts"
+
+
 # ---------------------------------------------------------------------------
 # Message templates
 # ---------------------------------------------------------------------------
@@ -450,16 +481,21 @@ def format_cars_message(listing: "Listing") -> str:
         rendered_template = "cars_detail_lv"
     else:
         parse_error = listing.detail_parse_error or "unknown_detail_error"
+        fallback_price, fallback_price_source = _cars_fallback_price(listing)
+        marka_modelis = _cars_model_fallback(listing)
         logger.warning(
-            "Cars detail fallback listing_id=%s url=%s parse_error=%s",
+            "Cars detail fallback listing_id=%s url=%s parse_error=%s fallback_price_source=%s final_template=%s",
             listing.external_id,
             listing.url,
             parse_error,
+            fallback_price_source,
+            "fallback_minimal",
         )
-        lines = [f"<b>{escape(listing.title)}</b>"]
-        if listing.price:
-            lines.append(f"💰 {escape(str(listing.price))}")
-        lines.append(f"🔗 {escape(listing.url)}")
+        lines = [
+            f"Marka/Modelis: {escape(marka_modelis)}",
+            f"Cena: {escape(fallback_price)}",
+            f"Saite: {escape(listing.url)}",
+        ]
         rendered_template = "fallback_minimal"
 
     logger.info(
