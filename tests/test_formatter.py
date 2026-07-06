@@ -5,6 +5,7 @@ import pytest
 
 from app.services.formatter import (
     detect_deal_type,
+    format_flats_message,
     format_generic_message,
     format_listing_message,
     format_price,
@@ -322,7 +323,7 @@ class TestFormatListingMessage:
             url="https://ss.lv/msg/lv/real-estate/flats/riga/sell/12345/",
         )
         msg = format_listing_message(listing)
-        assert "💰 Полная цена" in msg
+        assert "💰 Kopējā cena" in msg
 
     def test_dispatches_to_rent(self):
         listing = _listing(
@@ -331,12 +332,14 @@ class TestFormatListingMessage:
             url="https://ss.lv/msg/lv/real-estate/flats/riga/hand_over/12345/",
         )
         msg = format_listing_message(listing)
-        assert "💶 Цена в месяц" in msg
+        assert "💰 Cena/mēn." in msg
 
     def test_fallback_to_generic_when_unknown(self):
         listing = _listing(deal_type="unknown", price="123 €", city="Rīga")
         msg = format_listing_message(listing)
-        assert "💰 123 €" in msg
+        # Flats with unknown deal_type shows generic price label and city
+        assert "💰 Cena" in msg
+        assert listing.url in msg
 
     def test_infers_rent_from_search_url(self):
         listing = _listing(deal_type="unknown", price_monthly_eur=700.0)
@@ -344,7 +347,7 @@ class TestFormatListingMessage:
             listing,
             search_url="https://ss.lv/lv/real-estate/flats/riga/hand_over/",
         )
-        assert "💶 Цена в месяц" in msg
+        assert "💰 Cena/mēn." in msg
 
     def test_infers_sell_from_search_url(self):
         listing = _listing(deal_type="unknown", price_total_eur=150000.0)
@@ -352,7 +355,7 @@ class TestFormatListingMessage:
             listing,
             search_url="https://ss.lv/lv/real-estate/flats/riga/sell/",
         )
-        assert "💰 Полная цена" in msg
+        assert "💰 Kopējā cena" in msg
 
     def test_listing_deal_type_takes_priority_over_search_url(self):
         # listing.deal_type='sell' wins over a rent search_url
@@ -361,8 +364,8 @@ class TestFormatListingMessage:
             listing,
             search_url="https://ss.lv/lv/real-estate/flats/riga/hand_over/",
         )
-        assert "💰 Полная цена" in msg
-        assert "💶 Цена в месяц" not in msg
+        assert "💰 Kopējā cena" in msg
+        assert "Cena/mēn." not in msg
 
 
 # ---------------------------------------------------------------------------
@@ -502,12 +505,14 @@ class TestNoPhotoOnlyCaption:
         """Acceptance criterion: ≥5 structured lines + link for a well-populated listing."""
         listing = _listing(
             deal_type="sell",
+            city="Rīga",
             district="Centrs",
             street="Barona 15",
             rooms=3,
             area_m2=68.0,
             floor_current=3,
             floor_total=9,
+            series="P. kara",
             house_type="Sērijas",
             price_total_eur=125000.0,
             price_per_m2_eur=1838.0,
@@ -515,7 +520,7 @@ class TestNoPhotoOnlyCaption:
         msg = format_listing_message(listing)
         structured_lines = [
             l for l in msg.splitlines()
-            if any(emoji in l for emoji in ("🏙", "📍", "🛏", "📐", "🏢", "🧱", "💶", "💰"))
+            if any(emoji in l for emoji in ("🏙", "📍", "🚪", "🛏", "📐", "🏢", "🧱", "🏠", "💶", "💰"))
         ]
         assert len(structured_lines) >= 5, f"Expected ≥5 structured lines, got {len(structured_lines)}"
         assert listing.url in msg
@@ -526,3 +531,164 @@ class TestNoPhotoOnlyCaption:
         msg = format_listing_message(listing)
         assert "opt[" not in msg
         assert "topt[" not in msg
+
+
+# ---------------------------------------------------------------------------
+# format_flats_message — Latvian detail-table formatter
+# ---------------------------------------------------------------------------
+
+class TestFormatFlatsMessage:
+    """format_flats_message renders all detail-table fields with Latvian labels."""
+
+    def _flat(self, **kwargs) -> Listing:
+        defaults = dict(
+            external_id="99",
+            title="Barona iela 15",
+            url="https://ss.lv/msg/lv/real-estate/flats/riga/sell/99/",
+            deal_type="sell",
+        )
+        defaults.update(kwargs)
+        return Listing(**defaults)
+
+    def test_sell_shows_kopeja_cena(self):
+        listing = self._flat(deal_type="sell", price_total_eur=125000.0)
+        msg = format_flats_message(listing)
+        assert "💰 Kopējā cena" in msg
+        assert "125" in msg
+
+    def test_rent_shows_cena_per_men(self):
+        listing = self._flat(deal_type="rent", price_monthly_eur=650.0)
+        msg = format_flats_message(listing)
+        assert "💰 Cena/mēn." in msg
+        assert "650" in msg
+
+    def test_city_shown(self):
+        listing = self._flat(city="Rīga")
+        msg = format_flats_message(listing)
+        assert "🏙 Pilsēta: Rīga" in msg
+
+    def test_district_shown(self):
+        listing = self._flat(district="Centrs")
+        msg = format_flats_message(listing)
+        assert "📍 Rajons: Centrs" in msg
+
+    def test_street_shown(self):
+        listing = self._flat(street="Barona iela 15")
+        msg = format_flats_message(listing)
+        assert "🚪 Iela: Barona iela 15" in msg
+
+    def test_rooms_shown(self):
+        listing = self._flat(rooms=3)
+        msg = format_flats_message(listing)
+        assert "🛏 Istabas: 3" in msg
+
+    def test_area_shown(self):
+        listing = self._flat(area_m2=68.5)
+        msg = format_flats_message(listing)
+        assert "📐 Platība" in msg
+        assert "68.5" in msg
+
+    def test_floor_shown(self):
+        listing = self._flat(floor_current=3, floor_total=9)
+        msg = format_flats_message(listing)
+        assert "🏢 Stāvs: 3/9" in msg
+
+    def test_series_shown(self):
+        listing = self._flat(series="P. kara")
+        msg = format_flats_message(listing)
+        assert "🧱 Sērija: P. kara" in msg
+
+    def test_house_type_shown(self):
+        listing = self._flat(house_type="Mūra")
+        msg = format_flats_message(listing)
+        assert "🏠 Mājas tips: Mūra" in msg
+
+    def test_sell_per_m2_shown(self):
+        listing = self._flat(deal_type="sell", price_per_m2_eur=1838.0)
+        msg = format_flats_message(listing)
+        assert "💶 Cena/m²" in msg
+
+    def test_missing_fields_omitted(self):
+        listing = self._flat(
+            city=None, district=None, street=None,
+            rooms=None, area_m2=None,
+            floor_current=None, floor_total=None,
+            series=None, house_type=None,
+            price_total_eur=None, price_per_m2_eur=None,
+        )
+        msg = format_flats_message(listing)
+        assert "Pilsēta" not in msg
+        assert "Rajons" not in msg
+        assert "Istabas" not in msg
+        assert listing.url in msg
+
+    def test_url_always_present(self):
+        listing = self._flat()
+        msg = format_flats_message(listing)
+        assert listing.url in msg
+
+    def test_rent_does_not_show_kopeja_cena(self):
+        listing = self._flat(deal_type="rent", price_monthly_eur=800.0)
+        msg = format_flats_message(listing)
+        assert "Kopējā cena" not in msg
+
+    def test_sell_does_not_show_rent_price(self):
+        listing = self._flat(deal_type="sell", price_total_eur=100000.0)
+        msg = format_flats_message(listing)
+        assert "Cena/mēn." not in msg
+
+    def test_all_fields_populated(self):
+        listing = self._flat(
+            deal_type="sell",
+            city="Rīga",
+            district="Centrs",
+            street="Barona iela 15",
+            rooms=3,
+            area_m2=68.5,
+            floor_current=3,
+            floor_total=9,
+            series="P. kara",
+            house_type="Mūra",
+            price_total_eur=125000.0,
+            price_per_m2_eur=1825.0,
+        )
+        msg = format_flats_message(listing)
+        assert "🏙 Pilsēta: Rīga" in msg
+        assert "📍 Rajons: Centrs" in msg
+        assert "🚪 Iela: Barona iela 15" in msg
+        assert "🛏 Istabas: 3" in msg
+        assert "🏢 Stāvs: 3/9" in msg
+        assert "🧱 Sērija: P. kara" in msg
+        assert "🏠 Mājas tips: Mūra" in msg
+        assert "💶 Cena/m²" in msg
+        assert "💰 Kopējā cena" in msg
+        assert listing.url in msg
+
+    def test_deal_type_override_passed(self):
+        """deal_type kwarg overrides listing.deal_type."""
+        listing = self._flat(deal_type="unknown", price_monthly_eur=700.0)
+        msg = format_flats_message(listing, deal_type="rent")
+        assert "💰 Cena/mēn." in msg
+
+    def test_format_listing_message_routes_flats_url(self):
+        """format_listing_message routes /real-estate/flats/ URLs to Latvian formatter."""
+        listing = self._flat(deal_type="sell", city="Rīga", price_total_eur=100000.0)
+        msg = format_listing_message(listing)
+        assert "🏙 Pilsēta: Rīga" in msg
+        assert "💰 Kopējā cena" in msg
+        # Russian labels must not appear
+        assert "Район" not in msg
+        assert "Полная цена" not in msg
+
+    def test_format_listing_message_non_flats_url_uses_russian(self):
+        """format_listing_message routes non-flats URLs to Russian formatter."""
+        listing = Listing(
+            external_id="55",
+            title="Toyota",
+            url="https://ss.lv/msg/lv/transport/cars/55/",
+            deal_type="sell",
+            district="Centrs",
+            price_total_eur=12000.0,
+        )
+        msg = format_listing_message(listing)
+        assert "🏙 Район" in msg
