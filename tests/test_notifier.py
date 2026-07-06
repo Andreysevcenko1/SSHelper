@@ -82,6 +82,15 @@ class TestPresentFields:
         assert "price_total_eur" in fields
         assert "street" not in fields
 
+    def test_cars_fallback_has_non_empty_fields_marker(self):
+        listing = _listing(
+            url="https://ss.lv/msg/lv/transport/cars/skoda/superb/cdbfxb.html",
+            detail_fetch_ok=False,
+            deal_type="unknown",
+        )
+        fields = _present_fields(listing)
+        assert "detail_fetch_ok" in fields
+
 
 # ---------------------------------------------------------------------------
 # send_listing_notification — HD path

@@ -34,6 +34,16 @@ _METADATA_FIELDS = (
     "price_total_eur",
     "price_per_m2_eur",
     "price_monthly_eur",
+    "car_make",
+    "car_year",
+    "car_engine",
+    "car_gearbox",
+    "car_mileage_km",
+    "car_color",
+    "car_body_type",
+    "car_technical_inspection",
+    "detail_fetch_ok",
+    "detail_raw_cena",
 )
 
 
