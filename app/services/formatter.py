@@ -425,6 +425,54 @@ def format_flats_message(listing: "Listing", deal_type: str | None = None) -> st
     return "\n".join(lines)
 
 
+def format_cars_message(listing: "Listing") -> str:
+    """Render cars notifications with full Latvian detail fields when detail fetch succeeds."""
+    parsed_fields = list(listing.detail_parsed_labels or [])
+
+    if listing.detail_fetch_ok:
+        lines: list[str] = []
+        ordered_fields: list[tuple[str, str | None]] = [
+            ("Marka", getattr(listing, "car_make", None)),
+            ("Izlaiduma gads", getattr(listing, "car_year", None)),
+            ("Motors", getattr(listing, "car_engine", None)),
+            ("Ātrumkārba", getattr(listing, "car_gearbox", None)),
+            ("Nobraukums, km", getattr(listing, "car_mileage_km", None)),
+            ("Krāsa", getattr(listing, "car_color", None)),
+            ("Virsbūves tips", getattr(listing, "car_body_type", None)),
+            ("Tehniskā apskate", getattr(listing, "car_technical_inspection", None)),
+            ("Cena", listing.detail_raw_cena or listing.price),
+        ]
+        for label, value in ordered_fields:
+            if value is None or str(value).strip() == "":
+                continue
+            lines.append(f"{label}: {escape(str(value).strip())}")
+        lines.append(f"Saite: {escape(listing.url)}")
+        rendered_template = "cars_detail_lv"
+    else:
+        parse_error = listing.detail_parse_error or "unknown_detail_error"
+        logger.warning(
+            "Cars detail fallback listing_id=%s url=%s parse_error=%s",
+            listing.external_id,
+            listing.url,
+            parse_error,
+        )
+        lines = [f"<b>{escape(listing.title)}</b>"]
+        if listing.price:
+            lines.append(f"💰 {escape(str(listing.price))}")
+        lines.append(f"🔗 {escape(listing.url)}")
+        rendered_template = "fallback_minimal"
+
+    logger.info(
+        "Cars notification listing_id=%s url=%s detail_fetch_ok=%s parsed_fields=%s rendered_template=%s",
+        listing.external_id,
+        listing.url,
+        listing.detail_fetch_ok,
+        parsed_fields,
+        rendered_template,
+    )
+    return "\n".join(lines)
+
+
 def format_listing_message(listing: "Listing", search_url: str | None = None) -> str:
     """
     Select and render the appropriate message template.
@@ -445,6 +493,8 @@ def format_listing_message(listing: "Listing", search_url: str | None = None) ->
     profile = detect_profile(listing.url)
     if profile == "flats":
         return format_flats_message(listing, deal_type=deal_type)
+    if profile == "cars" and listing.detail_fetch_ok is not None:
+        return format_cars_message(listing)
 
     if deal_type == "sell":
         return format_sell_message(listing)
