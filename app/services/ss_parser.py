@@ -40,6 +40,14 @@ class Listing:
     detail_parse_error: str | None = None
     detail_parsed_labels: list[str] = field(default_factory=list)
     detail_raw_cena: str | None = None
+    car_make: str | None = None
+    car_year: str | None = None
+    car_engine: str | None = None
+    car_gearbox: str | None = None
+    car_mileage_km: str | None = None
+    car_color: str | None = None
+    car_body_type: str | None = None
+    car_technical_inspection: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +263,14 @@ _DETAIL_LABEL_MAP: dict[str, str] = {
     "ertibas": "comforts",
     "kadastra numurs": "cadastral_number",
     "cena": "price_raw",
+    "marka": "car_make",
+    "izlaiduma gads": "car_year",
+    "motors": "car_engine",
+    "atrumkarba": "car_gearbox",
+    "nobraukums, km": "car_mileage_km",
+    "krasa": "car_color",
+    "virsbuves tips": "car_body_type",
+    "tehniska apskate": "car_technical_inspection",
 }
 
 
@@ -298,6 +314,22 @@ def _apply_detail_field(label: str, value: str, result: dict) -> str | None:
         result["cadastral_number"] = value
     elif field_key == "price_raw":
         result["price_raw"] = value
+    elif field_key == "car_make":
+        result["car_make"] = value
+    elif field_key == "car_year":
+        result["car_year"] = value
+    elif field_key == "car_engine":
+        result["car_engine"] = value
+    elif field_key == "car_gearbox":
+        result["car_gearbox"] = value
+    elif field_key == "car_mileage_km":
+        result["car_mileage_km"] = value
+    elif field_key == "car_color":
+        result["car_color"] = value
+    elif field_key == "car_body_type":
+        result["car_body_type"] = value
+    elif field_key == "car_technical_inspection":
+        result["car_technical_inspection"] = value
     return normalized_label
 
 
@@ -424,6 +456,8 @@ def enrich_listing_from_detail(listing: "Listing", detail_data: dict) -> "Listin
         "city", "district", "street", "rooms", "area_m2",
         "floor_current", "floor_total", "series", "house_type",
         "comforts", "cadastral_number",
+        "car_make", "car_year", "car_engine", "car_gearbox",
+        "car_mileage_km", "car_color", "car_body_type", "car_technical_inspection",
     ):
         if fname in detail_data:
             kwargs[fname] = detail_data[fname]
@@ -638,17 +672,21 @@ class SSParser:
         """
         profile = detect_profile_from_url(listing.url)
         is_flats = profile == "flats"
+        is_cars = profile == "cars"
+        is_detail_profile = is_flats or is_cars
         try:
             detail_data = await self._fetch_detail_page_data(listing.url)
         except Exception as exc:
-            if not is_flats:
+            if not is_detail_profile:
                 logger.exception(
                     "Parser: detail fetch/enrich failed for listing %s",
                     listing.external_id,
                 )
                 return listing
+            category = "flats" if is_flats else "cars"
             logger.warning(
-                "Parser: flats detail fetch failed listing_id=%s url=%s error=%s",
+                "Parser: %s detail fetch failed listing_id=%s url=%s error=%s",
+                category,
                 listing.external_id,
                 listing.url,
                 exc,
@@ -661,15 +699,17 @@ class SSParser:
                 detail_raw_cena=None,
             )
 
-        if not is_flats:
+        if not is_detail_profile:
             return enrich_listing_from_detail(listing, detail_data)
 
         parsed_labels = detail_data.get("parsed_labels") or []
         raw_cena = detail_data.get("price_raw")
         if not parsed_labels:
             parse_error = "no_detail_labels_parsed"
+            category = "flats" if is_flats else "cars"
             logger.warning(
-                "Parser: flats detail parse failed listing_id=%s url=%s error=%s",
+                "Parser: %s detail parse failed listing_id=%s url=%s error=%s",
+                category,
                 listing.external_id,
                 listing.url,
                 parse_error,
