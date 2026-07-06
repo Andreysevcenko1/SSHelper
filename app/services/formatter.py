@@ -267,18 +267,75 @@ def format_generic_message(listing: "Listing") -> str:
     return "\n".join(lines)
 
 
+def format_flats_message(listing: "Listing", deal_type: str | None = None) -> str:
+    """Render the **FLATS** notification card with full Latvian detail-table fields.
+
+    Displays every field from the SS.lv spec table using Latvian labels:
+    Pilsēta, Rajons, Iela, Istabas, Platība, Stāvs, Sērija, Mājas tips, and
+    price (formatted by deal type).  Missing fields are silently omitted.
+    """
+    resolved_deal_type = deal_type if deal_type is not None else listing.deal_type
+    logger.debug(
+        "Message template selected: flats (deal_type=%s) for listing %s",
+        resolved_deal_type, listing.external_id,
+    )
+
+    area_str = f"{listing.area_m2}\u202fm²" if listing.area_m2 is not None else None
+    floor_str = _floor_str(listing.floor_current, listing.floor_total)
+
+    if resolved_deal_type == "sell":
+        price_label = "💰 Kopējā cena"
+        price_str = format_price(listing.price_total_eur, "€")
+        per_m2_str = format_price(listing.price_per_m2_eur, "€/m²")
+    elif resolved_deal_type == "rent":
+        price_label = "💰 Cena/mēn."
+        price_str = format_price(listing.price_monthly_eur, "€/mēn.")
+        per_m2_str = None
+    else:
+        price_label = "💰 Cena"
+        price_str = escape(listing.price) if listing.price else None
+        per_m2_str = None
+
+    lines: list[str] = [f"<b>{escape(listing.title)}</b>"]
+    for line in [
+        _opt_line("🏙 Pilsēta", listing.city),
+        _opt_line("📍 Rajons", listing.district),
+        _opt_line("🚪 Iela", listing.street),
+        _opt_line("🛏 Istabas", listing.rooms),
+        _opt_line("📐 Platība", area_str),
+        _opt_line("🏢 Stāvs", floor_str),
+        _opt_line("🧱 Sērija", listing.series),
+        _opt_line("🏠 Mājas tips", listing.house_type),
+        _opt_line("💶 Cena/m²", per_m2_str),
+        _opt_line(price_label, price_str),
+    ]:
+        if line:
+            lines.append(line)
+
+    lines.append(f"🔗 {listing.url}")
+    return "\n".join(lines)
+
+
 def format_listing_message(listing: "Listing", search_url: str | None = None) -> str:
     """
     Select and render the appropriate message template.
 
-    Uses ``listing.deal_type`` first; if it is ``'unknown'`` and *search_url*
-    is provided, attempts to infer the deal_type from the URL.  Falls back to
-    the generic template when still unknown.
-    """
-    deal_type = listing.deal_type
+    For SS.lv flats listings (detected from ``listing.url``), uses
+    :func:`format_flats_message` with Latvian detail-table labels.
 
+    For other categories uses ``listing.deal_type`` (inferred from
+    *search_url* when the listing's own deal_type is ``'unknown'``).
+    Falls back to the generic template when still unknown.
+    """
+    from app.filters.profiles import detect_profile
+
+    deal_type = listing.deal_type
     if deal_type == "unknown" and search_url:
         deal_type = detect_deal_type(search_url)
+
+    profile = detect_profile(listing.url)
+    if profile == "flats":
+        return format_flats_message(listing, deal_type=deal_type)
 
     if deal_type == "sell":
         return format_sell_message(listing)
