@@ -198,6 +198,66 @@ def _floor_str(floor_current: int | None, floor_total: int | None) -> str | None
     return None
 
 
+_PRICE_TOKEN_RE = r"\d[\d\s\u00a0\u202f.,]*\s*(?:€|eur)"
+_MONTHLY_RE = re.compile(rf"({_PRICE_TOKEN_RE}\s*/\s*m[ēe]n(?:e[sš]i)?\.?)", re.IGNORECASE)
+_PER_M2_RE = re.compile(rf"({_PRICE_TOKEN_RE}\s*/\s*m²)", re.IGNORECASE)
+_TOTAL_RE = re.compile(rf"({_PRICE_TOKEN_RE})(?!\s*/)", re.IGNORECASE)
+
+
+def _normalize_spaces(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _normalize_price_token(token: str) -> str:
+    normalized = _normalize_spaces(token.strip("() "))
+    normalized = re.sub(r"(?i)eur", "€", normalized)
+    normalized = re.sub(r"\s*/\s*", "/", normalized)
+    normalized = re.sub(r"(?i)/m[eē]n(?:e[sš]i)?\.?", "/mēn.", normalized)
+    normalized = re.sub(r"(?i)/m2", "/m²", normalized)
+    return normalized
+
+
+def _render_flats_price(raw_cena: str | None, deal_type: str | None) -> str | None:
+    if not raw_cena:
+        return None
+
+    source = _normalize_spaces(raw_cena)
+    monthly = _MONTHLY_RE.search(source)
+    per_m2 = _PER_M2_RE.search(source)
+    total = _TOTAL_RE.search(source)
+
+    monthly_str = _normalize_price_token(monthly.group(1)) if monthly else None
+    per_m2_str = _normalize_price_token(per_m2.group(1)) if per_m2 else None
+    total_str = _normalize_price_token(total.group(1)) if total else None
+
+    if deal_type == "rent":
+        if monthly_str and per_m2_str:
+            return f"{monthly_str} ({per_m2_str})"
+        if monthly_str:
+            return monthly_str
+        return source
+
+    if deal_type == "sell":
+        if total_str and per_m2_str:
+            return f"{total_str} ({per_m2_str})"
+        if total_str:
+            return total_str
+        return source
+
+    if monthly_str and per_m2_str:
+        return f"{monthly_str} ({per_m2_str})"
+    if total_str and per_m2_str:
+        return f"{total_str} ({per_m2_str})"
+    return monthly_str or total_str or source
+
+
+def _format_area_lv(area_m2: float | None) -> str | None:
+    if area_m2 is None:
+        return None
+    display = int(area_m2) if area_m2 == int(area_m2) else area_m2
+    return f"{display} m²"
+
+
 # ---------------------------------------------------------------------------
 # Message templates
 # ---------------------------------------------------------------------------
@@ -268,51 +328,100 @@ def format_generic_message(listing: "Listing") -> str:
 
 
 def format_flats_message(listing: "Listing", deal_type: str | None = None) -> str:
-    """Render the **FLATS** notification card with full Latvian detail-table fields.
-
-    Displays every field from the SS.lv spec table using Latvian labels:
-    Pilsēta, Rajons, Iela, Istabas, Platība, Stāvs, Sērija, Mājas tips, and
-    price (formatted by deal type).  Missing fields are silently omitted.
-    """
+    """Render flats notifications using detail-page Latvian fields and strict price rules."""
     resolved_deal_type = deal_type if deal_type is not None else listing.deal_type
-    logger.debug(
-        "Message template selected: flats (deal_type=%s) for listing %s",
-        resolved_deal_type, listing.external_id,
-    )
 
-    area_str = f"{listing.area_m2}\u202fm²" if listing.area_m2 is not None else None
+    if listing.detail_fetch_ok is None:
+        area_str = f"{listing.area_m2}\u202fm²" if listing.area_m2 is not None else None
+        floor_str = _floor_str(listing.floor_current, listing.floor_total)
+        if resolved_deal_type == "sell":
+            price_label = "💰 Kopējā cena"
+            price_str = format_price(listing.price_total_eur, "€")
+            per_m2_str = format_price(listing.price_per_m2_eur, "€/m²")
+        elif resolved_deal_type == "rent":
+            price_label = "💰 Cena/mēn."
+            price_str = format_price(listing.price_monthly_eur, "€/mēn.")
+            per_m2_str = None
+        else:
+            price_label = "💰 Cena"
+            price_str = escape(listing.price) if listing.price else None
+            per_m2_str = None
+
+        lines: list[str] = [f"<b>{escape(listing.title)}</b>"]
+        for line in [
+            _opt_line("🏙 Pilsēta", listing.city),
+            _opt_line("📍 Rajons", listing.district),
+            _opt_line("🚪 Iela", listing.street),
+            _opt_line("🛏 Istabas", listing.rooms),
+            _opt_line("📐 Platība", area_str),
+            _opt_line("🏢 Stāvs", floor_str),
+            _opt_line("🧱 Sērija", listing.series),
+            _opt_line("🏠 Mājas tips", listing.house_type),
+            _opt_line("💶 Cena/m²", per_m2_str),
+            _opt_line(price_label, price_str),
+        ]:
+            if line:
+                lines.append(line)
+        lines.append(f"🔗 {listing.url}")
+        return "\n".join(lines)
+
+    area_str = _format_area_lv(listing.area_m2)
     floor_str = _floor_str(listing.floor_current, listing.floor_total)
+    raw_cena = listing.detail_raw_cena or listing.price
+    rendered_price = _render_flats_price(raw_cena, resolved_deal_type)
+    parsed_labels = list(listing.detail_parsed_labels or [])
 
-    if resolved_deal_type == "sell":
-        price_label = "💰 Kopējā cena"
-        price_str = format_price(listing.price_total_eur, "€")
-        per_m2_str = format_price(listing.price_per_m2_eur, "€/m²")
-    elif resolved_deal_type == "rent":
-        price_label = "💰 Cena/mēn."
-        price_str = format_price(listing.price_monthly_eur, "€/mēn.")
-        per_m2_str = None
+    if listing.detail_fetch_ok:
+        lines: list[str] = []
+        if listing.city:
+            lines.append(f"Pilsēta: {escape(str(listing.city))}")
+        if listing.district:
+            lines.append(f"Rajons: {escape(str(listing.district))}")
+        if listing.street:
+            lines.append(f"Iela: {escape(str(listing.street))}")
+        if listing.rooms is not None:
+            lines.append(f"Istabas: {escape(str(listing.rooms))}")
+        if area_str:
+            lines.append(f"Platība: {escape(area_str)}")
+        if floor_str:
+            lines.append(f"Stāvs: {escape(floor_str)}")
+        if listing.series:
+            lines.append(f"Sērija: {escape(str(listing.series))}")
+        if listing.house_type:
+            lines.append(f"Mājas tips: {escape(str(listing.house_type))}")
+        if getattr(listing, "comforts", None):
+            lines.append(f"Ērtības: {escape(str(listing.comforts))}")
+        if getattr(listing, "cadastral_number", None):
+            lines.append(f"Kadastra numurs: {escape(str(listing.cadastral_number))}")
+        if rendered_price:
+            lines.append(f"Cena: {escape(rendered_price)}")
+        lines.append(f"Saite: {escape(listing.url)}")
+        template = "flats_detail_lv"
     else:
-        price_label = "💰 Cena"
-        price_str = escape(listing.price) if listing.price else None
-        per_m2_str = None
+        parse_error = listing.detail_parse_error or "unknown_detail_error"
+        logger.warning(
+            "Flats detail fallback listing_id=%s url=%s parse_error=%s",
+            listing.external_id,
+            listing.url,
+            parse_error,
+        )
+        lines = [f"Sludinājums: {escape(listing.title)}"]
+        if listing.price:
+            lines.append(f"Cena: {escape(str(listing.price))}")
+        lines.append(f"Saite: {escape(listing.url)}")
+        template = "fallback"
 
-    lines: list[str] = [f"<b>{escape(listing.title)}</b>"]
-    for line in [
-        _opt_line("🏙 Pilsēta", listing.city),
-        _opt_line("📍 Rajons", listing.district),
-        _opt_line("🚪 Iela", listing.street),
-        _opt_line("🛏 Istabas", listing.rooms),
-        _opt_line("📐 Platība", area_str),
-        _opt_line("🏢 Stāvs", floor_str),
-        _opt_line("🧱 Sērija", listing.series),
-        _opt_line("🏠 Mājas tips", listing.house_type),
-        _opt_line("💶 Cena/m²", per_m2_str),
-        _opt_line(price_label, price_str),
-    ]:
-        if line:
-            lines.append(line)
-
-    lines.append(f"🔗 {listing.url}")
+    logger.info(
+        "Flats notification listing_id=%s url=%s detail_fetch_ok=%s parsed_labels=%s "
+        "raw_cena=%r rendered_price=%r template=%s",
+        listing.external_id,
+        listing.url,
+        listing.detail_fetch_ok,
+        parsed_labels,
+        raw_cena,
+        rendered_price,
+        template,
+    )
     return "\n".join(lines)
 
 

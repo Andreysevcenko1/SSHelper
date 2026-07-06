@@ -34,6 +34,12 @@ class Listing:
     deal_type: str = "unknown"  # "sell" | "rent" | "unknown"
     image_url_hd: str | None = None
     image_url_preview: str | None = None
+    comforts: str | None = None
+    cadastral_number: str | None = None
+    detail_fetch_ok: bool | None = None
+    detail_parse_error: str | None = None
+    detail_parsed_labels: list[str] = field(default_factory=list)
+    detail_raw_cena: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -230,7 +236,8 @@ def _parse_location(
 
 def _normalize_label(text: str) -> str:
     """Lowercase, strip diacritics and normalise whitespace for label matching."""
-    nfkd = unicodedata.normalize("NFKD", text.lower().strip())
+    normalized = text.lower().strip().rstrip(":")
+    nfkd = unicodedata.normalize("NFKD", normalized)
     stripped = "".join(c for c in nfkd if not unicodedata.combining(c))
     return re.sub(r"\s+", " ", stripped).strip()
 
@@ -245,22 +252,30 @@ _DETAIL_LABEL_MAP: dict[str, str] = {
     "stavs": "floor",
     "serija": "series",
     "majas tips": "house_type",
+    "ertibas": "comforts",
+    "kadastra numurs": "cadastral_number",
     "cena": "price_raw",
 }
 
 
-def _apply_detail_field(label: str, value: str, result: dict) -> None:
+def _clean_street_value(value: str) -> str:
+    cleaned = re.sub(r"\[\s*karte\s*\]", "", value, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _apply_detail_field(label: str, value: str, result: dict) -> str | None:
     """Map a Latvian label/value pair into *result* using :data:`_DETAIL_LABEL_MAP`."""
-    field_key = _DETAIL_LABEL_MAP.get(_normalize_label(label))
+    normalized_label = _normalize_label(label)
+    field_key = _DETAIL_LABEL_MAP.get(normalized_label)
     if field_key is None:
-        return
+        return None
 
     if field_key == "city":
         result["city"] = value
     elif field_key == "district":
         result["district"] = value
     elif field_key == "street":
-        result["street"] = value
+        result["street"] = _clean_street_value(value)
     elif field_key == "rooms":
         parsed = _try_parse_rooms(value)
         if parsed is not None:
@@ -277,25 +292,35 @@ def _apply_detail_field(label: str, value: str, result: dict) -> None:
         result["series"] = value
     elif field_key == "house_type":
         result["house_type"] = value
+    elif field_key == "comforts":
+        result["comforts"] = value
+    elif field_key == "cadastral_number":
+        result["cadastral_number"] = value
     elif field_key == "price_raw":
         result["price_raw"] = value
+    return normalized_label
 
 
-def _parse_spec_table(table: Tag, result: dict) -> None:
+def _parse_spec_table(table: Tag, result: dict) -> list[str]:
     """Parse ``(ads_opt_name, ads_opt)`` cell pairs from an SS.lv spec table."""
+    parsed_labels: list[str] = []
     for row in table.find_all("tr"):
         cells = row.find_all("td")
         i = 0
         while i + 1 < len(cells):
             cell = cells[i]
-            if "ads_opt_name" in (cell.get("class") or []):
+            classes = cell.get("class") or []
+            if "ads_opt_name" in classes or "ads_opt_name_big" in classes:
                 label = cell.get_text(strip=True)
                 value = cells[i + 1].get_text(" ", strip=True)
                 if label and value:
-                    _apply_detail_field(label, value, result)
+                    parsed = _apply_detail_field(label, value, result)
+                    if parsed is not None:
+                        parsed_labels.append(parsed)
                 i += 2
             else:
                 i += 1
+    return parsed_labels
 
 
 def _extract_detail_image(soup: BeautifulSoup) -> str | None:
@@ -358,8 +383,9 @@ def parse_detail_page(html: str) -> dict:
         if name_cell is not None:
             spec_table = name_cell.find_parent("table")
 
+    parsed_labels: list[str] = []
     if spec_table is not None:
-        _parse_spec_table(spec_table, result)
+        parsed_labels = _parse_spec_table(spec_table, result)
 
     # Dedicated price element fallback (when not in the spec table)
     if "price_raw" not in result:
@@ -369,12 +395,14 @@ def parse_detail_page(html: str) -> dict:
                 text = elem.get_text(" ", strip=True)
                 if text:
                     result["price_raw"] = text
+                    parsed_labels.append("cena")
                     break
 
     # Best image from detail/gallery
     image_url_hd = _extract_detail_image(soup)
     if image_url_hd:
         result["image_url_hd"] = image_url_hd
+    result["parsed_labels"] = sorted(set(parsed_labels))
 
     return result
 
@@ -395,6 +423,7 @@ def enrich_listing_from_detail(listing: "Listing", detail_data: dict) -> "Listin
     for fname in (
         "city", "district", "street", "rooms", "area_m2",
         "floor_current", "floor_total", "series", "house_type",
+        "comforts", "cadastral_number",
     ):
         if fname in detail_data:
             kwargs[fname] = detail_data[fname]
@@ -607,15 +636,60 @@ class SSParser:
         Falls back to returning the original *listing* unchanged on any
         network or parse error so the caller never has to handle exceptions.
         """
+        profile = detect_profile_from_url(listing.url)
+        is_flats = profile == "flats"
         try:
             detail_data = await self._fetch_detail_page_data(listing.url)
-            return enrich_listing_from_detail(listing, detail_data)
-        except Exception:
-            logger.exception(
-                "Parser: detail fetch/enrich failed for listing %s",
+        except Exception as exc:
+            if not is_flats:
+                logger.exception(
+                    "Parser: detail fetch/enrich failed for listing %s",
+                    listing.external_id,
+                )
+                return listing
+            logger.warning(
+                "Parser: flats detail fetch failed listing_id=%s url=%s error=%s",
                 listing.external_id,
+                listing.url,
+                exc,
             )
-            return listing
+            return dataclasses.replace(
+                listing,
+                detail_fetch_ok=False,
+                detail_parse_error=str(exc),
+                detail_parsed_labels=[],
+                detail_raw_cena=None,
+            )
+
+        if not is_flats:
+            return enrich_listing_from_detail(listing, detail_data)
+
+        parsed_labels = detail_data.get("parsed_labels") or []
+        raw_cena = detail_data.get("price_raw")
+        if not parsed_labels:
+            parse_error = "no_detail_labels_parsed"
+            logger.warning(
+                "Parser: flats detail parse failed listing_id=%s url=%s error=%s",
+                listing.external_id,
+                listing.url,
+                parse_error,
+            )
+            return dataclasses.replace(
+                listing,
+                detail_fetch_ok=False,
+                detail_parse_error=parse_error,
+                detail_parsed_labels=[],
+                detail_raw_cena=raw_cena,
+            )
+
+        enriched = enrich_listing_from_detail(listing, detail_data)
+        return dataclasses.replace(
+            enriched,
+            detail_fetch_ok=True,
+            detail_parse_error=None,
+            detail_parsed_labels=list(parsed_labels),
+            detail_raw_cena=raw_cena,
+        )
 
     async def discover_available_filters(self, search_url: str) -> dict:
         """
