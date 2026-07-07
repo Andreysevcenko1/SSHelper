@@ -173,13 +173,14 @@ def test_field_by_idx():
     from app.bot.handlers.filter_cmds import _field_by_idx
 
     schema = {"a": {"label": "A"}, "b": {"label": "B"}}
-    name, info = _field_by_idx(schema, 0)
+    field_order = ["a", "b"]
+    name, info = _field_by_idx(schema, field_order, 0)
     assert name == "a"
     assert info["label"] == "A"
 
-    name2, info2 = _field_by_idx(schema, 1)
+    name2, info2 = _field_by_idx(schema, field_order, 1)
     assert name2 == "b"
 
-    none_name, none_info = _field_by_idx(schema, 99)
+    none_name, none_info = _field_by_idx(schema, field_order, 99)
     assert none_name is None
     assert none_info is None

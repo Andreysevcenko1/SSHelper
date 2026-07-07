@@ -1,7 +1,10 @@
 import re
 from types import SimpleNamespace
 
-from app.bot.handlers.filter_cmds import _format_edit_prompt, _sorted_fields
+import pytest
+
+from app.bot.handlers import filter_cmds
+from app.bot.handlers.filter_cmds import _format_edit_prompt, _resolve_field_options, _sorted_fields
 from app.bot.handlers.menu import _format_search_details
 from app.bot.keyboards.filters import filter_fields_kb
 from app.filters.renderer import render_canonical_filters
@@ -59,6 +62,19 @@ def test_filter_fields_page_2_has_no_raw_labels():
                 assert not _RAW_KEY_RE.search(button.text)
 
 
+def test_filter_fields_dedup_year_min_max_once():
+    schema = {
+        "topt[8][min]": {"label": "", "type": "text", "options": []},
+        "topt[18][min]": {"label": "", "type": "text", "options": []},
+        "topt[8][max]": {"label": "", "type": "text", "options": []},
+        "topt[18][max]": {"label": "", "type": "text", "options": []},
+    }
+    fields = _sorted_fields(schema, lang="ru", profile="cars")
+    labels = [label for _idx, _name, label in fields]
+    assert labels.count("Год (от)") == 1
+    assert labels.count("Год (до)") == 1
+
+
 def test_legacy_filters_render_correctly_for_cars_profile():
     raw = {"pr_min": "5000", "pr_max": "9000", "opt[14]": "BMW", "opt[4]": "2"}
     lines = render_canonical_filters(raw, "cars", locale="ru")
@@ -82,3 +98,66 @@ def test_search_details_hides_query_and_keeps_localized_filters():
     assert "https://www.ss.lv/lv/transport/cars/" in text
     assert "opt[" not in text and "topt[" not in text
     assert "Марка" in text and "Цена" in text
+
+
+def test_ru_screen_has_no_latvian_fragments_for_known_values():
+    search = SimpleNamespace(
+        id=7,
+        title="transport/cars",
+        is_active=True,
+        url="https://www.ss.lv/lv/transport/cars/",
+        effective_url="https://www.ss.lv/lv/transport/cars/",
+        category_profile="cars",
+    )
+    text = _format_search_details(search, {"opt[4]": "2", "opt[3]": "2"}, "ru")
+    assert "Дизель" in text and "Универсал" in text
+    assert "Dīzelis" not in text and "Universāls" not in text
+
+
+@pytest.mark.asyncio
+async def test_model_requires_brand_first_message():
+    field_info = {"label": "", "type": "select", "options": [{"value": "1", "text": "A4"}]}
+    options, message, source = await _resolve_field_options(
+        field_name="opt[15]",
+        field_info=field_info,
+        search_url="https://www.ss.lv/lv/transport/cars/",
+        current_filters={},
+        profile="cars",
+        lang="ru",
+        schema={"opt[15]": field_info},
+    )
+    assert options == []
+    assert "Сначала выберите марку" in message
+    assert source == "missing_brand"
+
+
+@pytest.mark.asyncio
+async def test_model_options_scoped_by_selected_brand(monkeypatch):
+    async def _fake_schema(_url: str):
+        return {
+            "opt[15]": {
+                "label": "Модель",
+                "type": "select",
+                "options": [
+                    {"value": "x5", "text": "X5"},
+                    {"value": "x3", "text": "X3"},
+                ],
+            }
+        }
+
+    monkeypatch.setattr(filter_cmds, "_get_schema", _fake_schema)
+    field_info = {"label": "", "type": "select", "options": []}
+    options, message, source = await _resolve_field_options(
+        field_name="opt[15]",
+        field_info=field_info,
+        search_url="https://www.ss.lv/lv/transport/cars/",
+        current_filters={"opt[14]": "BMW"},
+        profile="cars",
+        lang="ru",
+        schema={"opt[15]": field_info},
+    )
+    assert message is None
+    assert source == "model_scoped_by_brand"
+    texts = [o["display_text"] for o in options]
+    assert "X5" in texts and "X3" in texts
+    assert "Дизель" not in texts and "Универсал" not in texts
