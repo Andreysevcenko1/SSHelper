@@ -267,6 +267,11 @@ _T: dict[str, dict[str, str]] = {
         "ru": "Статус: {status}",
         "en": "Status: {status}",
     },
+    "search_detail_url": {
+        "lv": "🔗 {url}",
+        "ru": "🔗 {url}",
+        "en": "🔗 {url}",
+    },
     "search_detail_active_filters": {
         "lv": "\n🔍 <b>Aktīvie filtri:</b>",
         "ru": "\n🔍 <b>Активные фильтры:</b>",
@@ -351,6 +356,38 @@ _T: dict[str, dict[str, str]] = {
         "ru": "✏️ Введите значение для поля <b>{field}</b>:",
         "en": "✏️ Enter a value for filter field <b>{field}</b>:",
     },
+    "filter_edit_prompt": {
+        "lv": (
+            "✏️ <b>Filtra maiņa:</b> {field}\n"
+            "Pašreizējā vērtība: {current}\n"
+            "Ievadiet jaunu vērtību. {hint}"
+        ),
+        "ru": (
+            "✏️ <b>Изменение фильтра:</b> {field}\n"
+            "Текущее значение: {current}\n"
+            "Введите новое значение. {hint}"
+        ),
+        "en": (
+            "✏️ <b>Editing filter:</b> {field}\n"
+            "Current value: {current}\n"
+            "Enter a new value. {hint}"
+        ),
+    },
+    "filter_current_value_missing": {
+        "lv": "nav norādīta",
+        "ru": "не задано",
+        "en": "not set",
+    },
+    "filter_hint_numeric": {
+        "lv": "Piemērs: 5000",
+        "ru": "Пример: 5000",
+        "en": "Example: 5000",
+    },
+    "filter_hint_text": {
+        "lv": "Piemērs: BMW",
+        "ru": "Пример: BMW",
+        "en": "Example: BMW",
+    },
     # Label fallbacks used by filter_display_label when no schema label exists
     "filter_lbl_price_from": {
         "lv": "Cena no",
@@ -381,6 +418,11 @@ _T: dict[str, dict[str, str]] = {
         "lv": "Virsbūves tips",
         "ru": "Тип кузова",
         "en": "Body type",
+    },
+    "filter_lbl_fuel_type": {
+        "lv": "Degvielas tips",
+        "ru": "Тип топлива",
+        "en": "Fuel type",
     },
     "filter_lbl_year_from": {
         "lv": "Gads no",

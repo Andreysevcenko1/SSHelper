@@ -149,7 +149,7 @@ class TestToCanonicalCars:
 
     def test_fuel(self):
         result = to_canonical({"opt[4]": "2"}, "cars")
-        assert result["fuel"] == "2"
+        assert result["fuel_type"] == "2"
 
     def test_gearbox(self):
         result = to_canonical({"opt[5]": "2"}, "cars")

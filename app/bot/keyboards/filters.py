@@ -11,7 +11,7 @@ from app.bot.callbacks import (
     SearchCB,
 )
 from app.i18n import get_text
-from app.services.filters import filter_display_label
+from app.services.filters import filter_display_label, filter_value_label, sanitize_personal_ui_text
 
 _PAGE_SIZE_FIELDS = 8
 _PAGE_SIZE_OPTS = 8
@@ -51,12 +51,14 @@ def filter_items_kb(
     filters: dict,
     lang: str = "lv",
     schema: dict | None = None,
+    profile: str | None = None,
 ) -> InlineKeyboardMarkup:
     """Shows current active filters, each with a 🗑 delete button."""
     b = InlineKeyboardBuilder()
     for key, value in filters.items():
-        label = filter_display_label(key, schema, lang)
-        display = f"{label} = {value}"
+        label = filter_display_label(key, schema, lang, profile=profile)
+        value_label = filter_value_label(key, value, locale=lang, profile=profile, schema=schema)
+        display = sanitize_personal_ui_text(f"{label} = {value_label}", locale=lang, profile=profile)
         if len(display) > 32:
             display = display[:30] + "…"
         # Truncate key to 40 chars for callback safety
@@ -111,7 +113,7 @@ def filter_fields_kb(
     page_fields = fields[start:end]
 
     for idx, _name, label in page_fields:
-        display = label
+        display = sanitize_personal_ui_text(label, locale=lang)
         if len(display) > 32:
             display = display[:30] + "…"
         b.button(
@@ -168,6 +170,7 @@ def filter_options_kb(
     for i, opt in enumerate(page_opts):
         vidx = start + i
         text = str(opt.get("text") or opt.get("value") or vidx)
+        text = sanitize_personal_ui_text(text, locale=lang)
         if len(text) > 32:
             text = text[:30] + "…"
         b.button(

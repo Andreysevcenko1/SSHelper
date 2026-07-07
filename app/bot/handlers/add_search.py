@@ -21,8 +21,10 @@ from app.services.filters import (
     build_effective_url,
     extract_filters_from_url,
     filter_display_label,
+    filter_value_label,
     filters_to_json,
     normalize_filters,
+    sanitize_personal_ui_text,
 )
 from app.services.ss_parser import SSParser, detect_category
 from app.filters.profiles import detect_profile
@@ -45,22 +47,14 @@ def _validate_ss_url(url: str) -> str | None:
     return None
 
 
-def _format_filters(normalized: dict, schema: dict, lang: str) -> list[str]:
+def _format_filters(normalized: dict, schema: dict, lang: str, profile: str | None = None) -> list[str]:
     lines = []
     for key, value in normalized.items():
-        label = filter_display_label(key, schema=schema, locale=lang)
-        if isinstance(value, list):
-            display_value = ", ".join(str(v) for v in value)
-        else:
-            display_value = str(value)
-            if key in schema and schema[key].get("options"):
-                for opt in schema[key]["options"]:
-                    if str(opt.get("value", "")) == str(value):
-                        opt_text = opt.get("text", "").strip()
-                        if opt_text:
-                            display_value = opt_text
-                        break
-        lines.append(f"  • {label}: {display_value}")
+        label = filter_display_label(key, schema=schema, locale=lang, profile=profile)
+        display_value = filter_value_label(key, value, locale=lang, profile=profile, schema=schema)
+        lines.append(
+            sanitize_personal_ui_text(f"  • {label}: {display_value}", locale=lang, profile=profile)
+        )
     return lines
 
 
@@ -226,20 +220,20 @@ async def _process_add_url(
     category_label = translate_category(category, lang)
     lines = [
         f"✅ <b>#{search_id}</b> — {category_label}",
-        f"🔗 {eff_url}",
+        get_text("search_detail_url", lang, url=b_url),
     ]
     if normalized:
         # Use profile-aware renderer; fall back to schema-based for generic
         if profile:
             filter_lines = render_canonical_filters(normalized, profile, locale=lang)
         else:
-            filter_lines = _format_filters(normalized, schema, lang)
+            filter_lines = _format_filters(normalized, schema, lang, profile=profile)
         lines.append(get_text("search_detail_active_filters", lang))
         lines.extend(filter_lines)
     else:
         lines.append(get_text("search_detail_no_filters", lang))
 
-    text = "\n".join(lines)
+    text = sanitize_personal_ui_text("\n".join(lines), locale=lang, profile=profile)
     kb = after_add_kb(search_id, lang=lang)
 
     if edit_msg_id and message.bot:
