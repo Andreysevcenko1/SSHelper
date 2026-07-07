@@ -20,6 +20,7 @@ from app.services.filters import (
     base_url_without_query,
     build_effective_url,
     extract_filters_from_url,
+    filter_display_label,
     filters_to_json,
     normalize_filters,
 )
@@ -44,14 +45,10 @@ def _validate_ss_url(url: str) -> str | None:
     return None
 
 
-def _format_filters(normalized: dict, schema: dict) -> list[str]:
+def _format_filters(normalized: dict, schema: dict, lang: str) -> list[str]:
     lines = []
     for key, value in normalized.items():
-        label = key
-        if key in schema:
-            schema_label = schema[key].get("label", "").strip()
-            if schema_label and schema_label != key:
-                label = schema_label
+        label = filter_display_label(key, schema=schema, locale=lang)
         if isinstance(value, list):
             display_value = ", ".join(str(v) for v in value)
         else:
@@ -236,7 +233,7 @@ async def _process_add_url(
         if profile:
             filter_lines = render_canonical_filters(normalized, profile, locale=lang)
         else:
-            filter_lines = _format_filters(normalized, schema)
+            filter_lines = _format_filters(normalized, schema, lang)
         lines.append(get_text("search_detail_active_filters", lang))
         lines.extend(filter_lines)
     else:

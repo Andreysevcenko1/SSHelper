@@ -61,7 +61,7 @@ def _sorted_fields(schema: dict, lang: str = "lv") -> list[tuple[int, str, str]]
     """Return (index, name, label) tuples sorted by name, labels resolved via filter_display_label."""
     items = []
     for i, (name, info) in enumerate(sorted(schema.items())):
-        label = (info.get("label") or "").strip() or filter_display_label(name, schema, lang)
+        label = filter_display_label(name, schema, lang)
         items.append((i, name, label))
     return items
 
