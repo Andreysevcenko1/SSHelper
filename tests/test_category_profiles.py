@@ -138,18 +138,14 @@ class TestToCanonicalCars:
         assert result["year_min"] == "2018"
         assert result["year_max"] == "2023"
 
-    def test_mileage(self):
-        result = to_canonical({"topt[10][max]": "120000"}, "cars")
-        assert result["mileage_max"] == "120000"
-
-    def test_engine(self):
+    def test_volume(self):
         result = to_canonical({"topt[11][min]": "1600", "topt[11][max]": "2000"}, "cars")
-        assert result["engine_min"] == "1600"
-        assert result["engine_max"] == "2000"
+        assert result["volume_min"] == "1600"
+        assert result["volume_max"] == "2000"
 
-    def test_fuel(self):
+    def test_engine_type(self):
         result = to_canonical({"opt[4]": "2"}, "cars")
-        assert result["fuel_type"] == "2"
+        assert result["engine_type"] == "2"
 
     def test_gearbox(self):
         result = to_canonical({"opt[5]": "2"}, "cars")
@@ -259,17 +255,18 @@ class TestRenderCars:
         assert "Год" in joined
         _assert_no_raw_keys(lines)
 
-    def test_mileage_with_unit(self):
-        raw = {"topt[10][max]": "120000"}
+    def test_volume_with_unit(self):
+        raw = {"topt[11][max]": "2000"}
         lines = render_canonical_filters(raw, "cars", locale="ru")
         joined = " ".join(lines)
-        assert "км" in joined
+        assert "см³" in joined
         _assert_no_raw_keys(lines)
 
-    def test_fuel_resolved(self):
+    def test_engine_type_resolved(self):
         raw = {"opt[4]": "2"}
         lines = render_canonical_filters(raw, "cars", locale="ru")
         joined = " ".join(lines)
+        assert "Двигатель" in joined
         assert "Дизель" in joined
         _assert_no_raw_keys(lines)
 
@@ -294,7 +291,7 @@ class TestRenderCars:
         assert "999" not in joined
         _assert_no_raw_keys(lines)
 
-    def test_display_order_make_before_price(self):
+    def test_display_order_price_before_brand(self):
         raw = {
             "pr_min": "10000",
             "opt[14]": "BMW",
@@ -303,13 +300,13 @@ class TestRenderCars:
         joined = " | ".join(lines)
         make_pos = joined.find("Марка")
         price_pos = joined.find("Цена")
-        assert make_pos < price_pos, "Make should appear before price"
+        assert price_pos < make_pos, "Price should appear before brand"
 
     def test_label_lv(self):
         raw = {"opt[4]": "1"}
         lines = render_canonical_filters(raw, "cars", locale="lv")
         joined = " ".join(lines)
-        assert "Degviela" in joined
+        assert "Dzinējs" in joined
 
     def test_label_en(self):
         raw = {"opt[5]": "1"}
@@ -395,7 +392,7 @@ class TestRegressionCarsUrl:
         _assert_no_raw_keys(lines)
         joined = " ".join(lines)
         assert "Год" in joined
-        assert "Пробег" in joined
+        assert "Пробег" not in joined
         assert "Дизель" in joined
         assert "Автомат" in joined
         assert "Цена" in joined

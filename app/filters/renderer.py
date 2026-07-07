@@ -69,6 +69,10 @@ def _render_profile(raw_filters: dict, profile, locale: str) -> list[str]:
     canonical = to_canonical(raw_filters, profile.__name__.rsplit(".", 1)[-1])
 
     display_order: list[str] = getattr(profile, "DISPLAY_ORDER", [])
+    strict_only: bool = bool(getattr(profile, "STRICT_CANONICAL_ONLY", False))
+    if strict_only:
+        allowed = set(display_order)
+        canonical = {k: v for k, v in canonical.items() if k in allowed}
     units: dict[str, str] = getattr(profile, "UNITS", {})
 
     # Sort by display order first, then alphabetically for remaining fields
