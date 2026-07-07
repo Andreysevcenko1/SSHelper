@@ -4,7 +4,13 @@ from types import SimpleNamespace
 import pytest
 
 from app.bot.handlers import filter_cmds
-from app.bot.handlers.filter_cmds import _format_edit_prompt, _resolve_field_options, _sorted_fields
+from app.bot.handlers.filter_cmds import (
+    _extract_brand_slug_options_from_html,
+    _format_edit_prompt,
+    _resolve_field_options,
+    _rewrite_cars_brand_slug_in_url,
+    _sorted_fields,
+)
 from app.bot.handlers.menu import _format_search_details
 from app.bot.keyboards.filters import filter_fields_kb
 from app.filters.renderer import render_canonical_filters
@@ -94,6 +100,24 @@ def test_cars_dm_registry_has_exact_semantic_order():
     ]
 
 
+def test_brand_slug_url_rewrite_for_saab():
+    url = "https://www.ss.lv/lv/transport/cars/?topt[17][min]=5000"
+    rewritten = _rewrite_cars_brand_slug_in_url(url, "saab")
+    assert "/transport/cars/saab/" in rewritten
+    assert "topt%5B17%5D%5Bmin%5D=5000" in rewritten or "topt[17][min]=5000" in rewritten
+
+
+def test_extract_brand_slugs_contains_known_brands():
+    html = """
+    <a href="/lv/transport/cars/bmw/">BMW</a>
+    <a href="/lv/transport/cars/mercedes/">Mercedes</a>
+    <a href="/lv/transport/cars/saab/">Saab</a>
+    """
+    options = _extract_brand_slug_options_from_html(html, "lv")
+    values = {o["value"] for o in options}
+    assert {"bmw", "mercedes", "saab"}.issubset(values)
+
+
 def test_legacy_filters_render_correctly_for_cars_profile():
     raw = {"pr_min": "5000", "pr_max": "9000", "opt[14]": "BMW", "opt[4]": "2"}
     lines = render_canonical_filters(raw, "cars", locale="ru")
@@ -179,6 +203,36 @@ async def test_model_options_scoped_by_selected_brand(monkeypatch):
     assert source == "model"
     texts = [o["display_text"] for o in options]
     assert "X5" in texts and "X3" in texts
+    assert "Дизель" not in texts and "Универсал" not in texts
+
+
+@pytest.mark.asyncio
+async def test_brand_options_use_slug_source_not_fuel(monkeypatch):
+    async def _fake_brand_options(_search_url: str, _lang: str):
+        return [
+            {"value": "bmw", "text": "BMW"},
+            {"value": "saab", "text": "Saab"},
+        ]
+
+    monkeypatch.setattr(filter_cmds, "_fetch_brand_slug_options", _fake_brand_options)
+    field_info = {
+        "label": "",
+        "type": "select",
+        "options": [{"value": "2", "text": "Дизель"}],  # wrong schema source, must be ignored
+    }
+    options, message, source = await _resolve_field_options(
+        field_name="opt[14]",
+        field_info=field_info,
+        search_url="https://www.ss.lv/lv/transport/cars/",
+        current_filters={},
+        profile="cars",
+        lang="ru",
+        schema={"opt[14]": field_info},
+    )
+    assert message is None
+    assert source == "brand"
+    texts = [o["display_text"] for o in options]
+    assert "BMW" in texts and "Saab" in texts
     assert "Дизель" not in texts and "Универсал" not in texts
 
 

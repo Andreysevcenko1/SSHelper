@@ -5,7 +5,10 @@ Filter-related handlers:
 - FSM: EditFilterFSM.waiting_value for free-text filter input
 """
 import logging
+import re
+from urllib.parse import urlparse, urlunparse
 
+import aiohttp
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, StateFilter
@@ -51,6 +54,78 @@ router = Router()
 
 _NUMERIC_KEYWORDS = ("min", "max", "price", "pr_", "year", "run", "area", "floor", "room", "volume")
 _CARS_SPECS_BY_CANONICAL = cars_registry_by_canonical_key()
+_RE_BRAND_LINK = re.compile(r"/(?P<lang>lv|ru|en)/transport/cars/(?P<slug>[a-z0-9][a-z0-9-]*)/", re.IGNORECASE)
+_RE_NON_SLUG = re.compile(r"[^a-z0-9-]+")
+
+
+def _cars_lang_from_url(url: str) -> str:
+    path = urlparse(url).path
+    parts = [p for p in path.split("/") if p]
+    if parts and parts[0] in {"lv", "ru", "en"}:
+        return parts[0]
+    return "lv"
+
+
+def _normalize_brand_slug(value: str) -> str:
+    slug = value.strip().lower().replace("_", "-").replace(" ", "-")
+    slug = _RE_NON_SLUG.sub("", slug)
+    return re.sub(r"-{2,}", "-", slug).strip("-")
+
+
+def _brand_display_name(slug: str) -> str:
+    overrides = {
+        "mercedes-benz": "Mercedes-Benz",
+        "land-rover": "Land Rover",
+        "alfa-romeo": "Alfa Romeo",
+    }
+    if slug in overrides:
+        return overrides[slug]
+    return " ".join(part.capitalize() for part in slug.split("-"))
+
+
+def _extract_brand_slug_options_from_html(html: str, lang: str) -> list[dict]:
+    seen: set[str] = set()
+    options: list[dict] = []
+    for match in _RE_BRAND_LINK.finditer(html):
+        if match.group("lang").lower() != lang:
+            continue
+        slug = _normalize_brand_slug(match.group("slug"))
+        if not slug or slug in seen:
+            continue
+        seen.add(slug)
+        options.append({"value": slug, "text": _brand_display_name(slug)})
+    return sorted(options, key=lambda o: o["text"])
+
+
+async def _fetch_brand_slug_options(search_url: str, lang: str) -> list[dict]:
+    parsed = urlparse(search_url)
+    cars_root = f"{parsed.scheme or 'https'}://{parsed.netloc}/" \
+        f"{lang}/transport/cars/"
+    timeout = aiohttp.ClientTimeout(total=20)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(cars_root, headers={"User-Agent": "Mozilla/5.0"}) as response:
+                response.raise_for_status()
+                html = await response.text()
+    except Exception as exc:
+        logger.warning("filter_cmds: failed to fetch brand slugs from %s: %s", cars_root, exc)
+        return []
+    return _extract_brand_slug_options_from_html(html, lang)
+
+
+def _rewrite_cars_brand_slug_in_url(url: str, brand_slug: str) -> str:
+    parsed = urlparse(url)
+    parts = [p for p in parsed.path.split("/") if p]
+    if len(parts) < 3:
+        return url
+    if parts[1:3] != ["transport", "cars"]:
+        return url
+    if len(parts) >= 4:
+        parts[3] = brand_slug
+    else:
+        parts.append(brand_slug)
+    new_path = "/" + "/".join(parts) + "/"
+    return urlunparse(parsed._replace(path=new_path))
 
 
 def _is_numeric_field(name: str, field_type: str) -> bool:
@@ -270,10 +345,13 @@ async def _resolve_field_options(
     source = "schema"
     if profile == "cars" and spec is None:
         return [], get_text("filter_options_unavailable", lang), "unknown_canonical"
-    options = [
-        o for o in field_info.get("options", [])
-        if str(o.get("value", "")).strip()
-    ]
+    options = [o for o in field_info.get("options", []) if str(o.get("value", "")).strip()]
+
+    if canonical == "brand" and profile == "cars":
+        options = await _fetch_brand_slug_options(search_url, _cars_lang_from_url(search_url))
+        source = "brand_path_slug"
+        if not options:
+            return [], get_text("filter_options_unavailable", lang), "brand_source_unavailable"
 
     if canonical == "model":
         selected_brand = _find_selected_brand(current_filters, profile)
@@ -281,8 +359,10 @@ async def _resolve_field_options(
             return [], get_text("filter_select_brand_first", lang), "missing_brand"
         brand_key, brand_value = selected_brand
         scoped_filters = dict(current_filters)
-        scoped_filters[brand_key] = brand_value
-        scoped_url = build_effective_url(base_url_without_query(search_url), scoped_filters)
+        brand_slug = _normalize_brand_slug(brand_value)
+        scoped_filters[brand_key] = brand_slug
+        base_url = _rewrite_cars_brand_slug_in_url(base_url_without_query(search_url), brand_slug)
+        scoped_url = build_effective_url(base_url, scoped_filters)
         scoped_schema = await _get_schema(scoped_url)
         scoped_field = scoped_schema.get(field_name)
         if scoped_field is not None:
@@ -1026,6 +1106,8 @@ async def cb_filter_opt(
     value = str(chosen.get("value", ""))
     canonical = canonical_filter_key_for_profile(field_name, profile)
     model_reset = False
+    final_search_url = ""
+    selected_brand_slug = ""
     session = session_factory()
     try:
         repo = SearchRepository(session)
@@ -1040,7 +1122,28 @@ async def cb_filter_opt(
                 if canonical_filter_key_for_profile(raw_key, profile) == "brand":
                     previous_brand = str(raw_value)
                     break
+            selected_brand_slug = _normalize_brand_slug(value)
+            value = selected_brand_slug
         repo.set_filter(search, field_name, value)
+        if canonical == "brand":
+            merged_filters = filters_from_json(search.filters_json)
+            rewritten_base = _rewrite_cars_brand_slug_in_url(search.base_url or search.url or "", selected_brand_slug)
+            search.base_url = rewritten_base
+            search.effective_url = build_effective_url(rewritten_base, merged_filters)
+            final_search_url = search.effective_url or ""
+            if f"/transport/cars/{selected_brand_slug}/" not in final_search_url:
+                logger.warning(
+                    "filter_cmds: brand slug validation failed slug=%s final_url=%s",
+                    selected_brand_slug,
+                    final_search_url,
+                )
+            logger.debug(
+                "filter_cmds: selected_brand_slug=%s final_search_url=%s",
+                selected_brand_slug,
+                final_search_url,
+            )
+            session.add(search)
+            session.commit()
         if canonical == "brand" and previous_brand is not None and previous_brand != value:
             # Brand changed; clear model to force fresh compatible selection.
             model_raw_keys = [
