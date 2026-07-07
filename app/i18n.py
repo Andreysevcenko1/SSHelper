@@ -388,6 +388,21 @@ _T: dict[str, dict[str, str]] = {
         "ru": "Пример: BMW",
         "en": "Example: BMW",
     },
+    "filter_select_brand_first": {
+        "lv": "Vispirms izvēlieties marku.",
+        "ru": "Сначала выберите марку.",
+        "en": "Select brand first.",
+    },
+    "filter_options_unavailable": {
+        "lv": "Šim filtram opcijas šobrīd nav pieejamas.",
+        "ru": "Опции для этого фильтра сейчас недоступны.",
+        "en": "Options for this filter are currently unavailable.",
+    },
+    "filter_option_unavailable": {
+        "lv": "Opcija nav pieejama",
+        "ru": "Опция недоступна",
+        "en": "Option unavailable",
+    },
     # Label fallbacks used by filter_display_label when no schema label exists
     "filter_lbl_price_from": {
         "lv": "Cena no",

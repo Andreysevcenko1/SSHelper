@@ -169,7 +169,7 @@ def filter_options_kb(
 
     for i, opt in enumerate(page_opts):
         vidx = start + i
-        text = str(opt.get("text") or opt.get("value") or vidx)
+        text = str(opt.get("display_text") or opt.get("text") or opt.get("value") or vidx)
         text = sanitize_personal_ui_text(text, locale=lang)
         if len(text) > 32:
             text = text[:30] + "…"

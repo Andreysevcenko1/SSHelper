@@ -30,6 +30,9 @@ from app.bot.utils import try_delete_message
 from app.db.repo import SearchRepository
 from app.i18n import get_text
 from app.services.filters import (
+    base_url_without_query,
+    build_effective_url,
+    canonical_filter_key_for_profile,
     filter_display_label,
     filter_value_label,
     filters_from_json,
@@ -64,21 +67,109 @@ async def _get_schema(url: str) -> dict:
 
 def _sorted_fields(schema: dict, lang: str = "lv", profile: str | None = None) -> list[tuple[int, str, str]]:
     """Return (index, name, label) tuples sorted by name, labels resolved via filter_display_label."""
-    items = []
-    for i, (name, info) in enumerate(sorted(schema.items())):
+    seen_canonical: set[str] = set()
+    raw_items: list[tuple[str, dict, str]] = []
+    for name, info in sorted(schema.items()):
         if str(info.get("type", "")).lower() == "hidden":
             continue
+        canonical = canonical_filter_key_for_profile(name, profile) or name.lower()
+        if canonical in seen_canonical:
+            continue
+        seen_canonical.add(canonical)
         label = filter_display_label(name, schema, lang, profile=profile)
+        raw_items.append((name, info, label))
+
+    items = []
+    for i, (name, _info, label) in enumerate(raw_items):
         items.append((i, name, label))
     return items
 
 
-def _field_by_idx(schema: dict, fidx: int) -> tuple[str, dict] | tuple[None, None]:
-    sorted_keys = sorted(schema.keys())
-    if 0 <= fidx < len(sorted_keys):
-        key = sorted_keys[fidx]
-        return key, schema[key]
+def _field_by_idx(
+    schema: dict,
+    field_order: list[str],
+    fidx: int,
+) -> tuple[str, dict] | tuple[None, None]:
+    if 0 <= fidx < len(field_order):
+        key = field_order[fidx]
+        if key in schema:
+            return key, schema[key]
     return None, None
+
+
+def _find_selected_brand(
+    current_filters: dict[str, str | list[str]],
+    profile: str | None,
+) -> tuple[str, str] | None:
+    for raw_key, raw_value in current_filters.items():
+        canonical = canonical_filter_key_for_profile(raw_key, profile)
+        if canonical == "brand":
+            if isinstance(raw_value, list):
+                if raw_value:
+                    return raw_key, str(raw_value[0])
+            else:
+                return raw_key, str(raw_value)
+    return None
+
+
+def _is_mismatched_option_source(canonical_key: str, options: list[dict], locale: str) -> bool:
+    known_fuel = {
+        "Бензин", "Дизель", "Газ", "Гибрид", "Электро",
+        "Benzīns", "Dīzelis", "Gāze", "Hibrīds", "Elektriskais",
+        "Petrol", "Diesel", "Gas", "Hybrid", "Electric",
+    }
+    known_body = {
+        "Седан", "Универсал", "Хэтчбек", "Купе", "Кабриолет", "Минивэн", "Внедорожник", "Пикап",
+        "Sedans", "Universāls", "Hečbeks", "Kupe", "Kabriolets", "Minivens", "SUV/Džips", "Pikaps",
+        "Sedan", "Estate", "Hatchback", "Coupe", "Convertible", "Minivan", "SUV", "Pickup",
+    }
+    texts = {str(opt.get("display_text") or opt.get("text") or "").strip() for opt in options}
+    texts.discard("")
+    if not texts:
+        return False
+
+    if canonical_key == "model":
+        return len(texts & known_fuel) > 0 or len(texts & known_body) > 0
+    if canonical_key == "brand":
+        return len(texts & known_fuel) > 0
+    if canonical_key == "fuel_type":
+        return not bool(texts & known_fuel)
+    if canonical_key == "body_type":
+        return not bool(texts & known_body)
+    return False
+
+
+def _prepare_options_for_ui(
+    *,
+    field_name: str,
+    options: list[dict],
+    profile: str | None,
+    lang: str,
+    schema: dict | None = None,
+) -> list[dict]:
+    canonical = canonical_filter_key_for_profile(field_name, profile) or field_name
+    prepared: list[dict] = []
+    for opt in options:
+        value = str(opt.get("value", "")).strip()
+        if not value:
+            continue
+        display_text = filter_value_label(field_name, value, locale=lang, profile=profile, schema=schema)
+        if display_text == value and not str(opt.get("text", "")).strip() and canonical in {
+            "brand", "model", "fuel_type", "body_type", "gearbox", "color", "city_district",
+        }:
+            display_text = get_text("filter_option_unavailable", lang)
+        if display_text == value and str(opt.get("text", "")).strip():
+            display_text = str(opt.get("text", "")).strip()
+        prepared.append({**opt, "display_text": sanitize_personal_ui_text(display_text, locale=lang, profile=profile)})
+
+    logger.debug(
+        "filter_options: canonical_key=%s locale=%s option_source=%s option_count=%d",
+        canonical,
+        lang,
+        "schema",
+        len(prepared),
+    )
+    return prepared
 
 
 def _filters_lines(
@@ -136,6 +227,71 @@ def _format_edit_prompt(
     hint = get_text(hint_key, lang)
     prompt = get_text("filter_edit_prompt", lang, field=label, current=current, hint=hint)
     return sanitize_personal_ui_text(prompt, locale=lang, profile=profile)
+
+
+async def _resolve_field_options(
+    *,
+    field_name: str,
+    field_info: dict,
+    search_url: str,
+    current_filters: dict[str, str | list[str]],
+    profile: str | None,
+    lang: str,
+    schema: dict,
+) -> tuple[list[dict], str | None, str]:
+    """Resolve options for a field with model-by-brand cascade and source guards."""
+    canonical = canonical_filter_key_for_profile(field_name, profile) or field_name
+    source = "schema"
+    options = [
+        o for o in field_info.get("options", [])
+        if str(o.get("value", "")).strip()
+    ]
+
+    if canonical == "model":
+        selected_brand = _find_selected_brand(current_filters, profile)
+        if selected_brand is None:
+            return [], get_text("filter_select_brand_first", lang), "missing_brand"
+        brand_key, brand_value = selected_brand
+        scoped_filters = dict(current_filters)
+        scoped_filters[brand_key] = brand_value
+        scoped_url = build_effective_url(base_url_without_query(search_url), scoped_filters)
+        scoped_schema = await _get_schema(scoped_url)
+        scoped_field = scoped_schema.get(field_name)
+        if scoped_field is not None:
+            options = [
+                o for o in scoped_field.get("options", [])
+                if str(o.get("value", "")).strip()
+            ]
+            source = "model_scoped_by_brand"
+        else:
+            return [], get_text("filter_options_unavailable", lang), "model_scoped_missing"
+
+    prepared = _prepare_options_for_ui(
+        field_name=field_name,
+        options=options,
+        profile=profile,
+        lang=lang,
+        schema=schema,
+    )
+
+    if _is_mismatched_option_source(canonical, prepared, lang):
+        logger.error(
+            "filter_option_source_guard: canonical_key=%s locale=%s option_source=%s option_count=%d",
+            canonical,
+            lang,
+            source,
+            len(prepared),
+        )
+        return [], get_text("filter_options_unavailable", lang), f"guard_mismatch:{canonical}"
+
+    logger.debug(
+        "filter_options_resolved: canonical_key=%s locale=%s option_source=%s option_count=%d",
+        canonical,
+        lang,
+        source,
+        len(prepared),
+    )
+    return prepared, None, source
 
 
 async def _safe_edit(callback: CallbackQuery, text: str, reply_markup=None) -> None:
@@ -517,7 +673,15 @@ async def cb_filter_edit_start(
         return
 
     fields = _sorted_fields(schema, lang, profile=profile)
-    await state.update_data(schema=schema, sid=sid, profile=profile, current_filters=current_filters)
+    field_order = [name for _, name, _label in fields]
+    await state.update_data(
+        schema=schema,
+        sid=sid,
+        profile=profile,
+        current_filters=current_filters,
+        search_url=search_url,
+        field_order=field_order,
+    )
 
     await _safe_edit(
         callback,
@@ -640,6 +804,8 @@ async def cb_filter_edit_field(
     sid: int = data.get("sid", callback_data.sid)
     profile: str | None = data.get("profile")
     current_filters: dict = data.get("current_filters", {})
+    search_url: str = data.get("search_url", "")
+    field_order: list[str] = data.get("field_order", [])
 
     # Re-fetch schema if not in state (e.g. after restart)
     if not schema:
@@ -657,16 +823,41 @@ async def cb_filter_edit_field(
         finally:
             session.close()
         schema = await _get_schema(search_url)
-        await state.update_data(schema=schema, sid=sid, profile=profile, current_filters=current_filters)
+        fields = _sorted_fields(schema, lang, profile=profile)
+        field_order = [name for _, name, _label in fields]
+        await state.update_data(
+            schema=schema,
+            sid=sid,
+            profile=profile,
+            current_filters=current_filters,
+            search_url=search_url,
+            field_order=field_order,
+        )
+    elif not search_url:
+        session = session_factory()
+        try:
+            repo = SearchRepository(session)
+            search = repo.get_by_id(sid)
+            if search:
+                search_url = search.effective_url or search.url
+                await state.update_data(search_url=search_url)
+        finally:
+            session.close()
 
-    field_name, field_info = _field_by_idx(schema, callback_data.fidx)
+    field_name, field_info = _field_by_idx(schema, field_order, callback_data.fidx)
     if field_name is None:
         await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
         return
 
-    options = field_info.get("options", [])
-    # Filter out blank/empty options
-    options = [o for o in options if str(o.get("value", "")).strip()]
+    options, unavailable_message, option_source = await _resolve_field_options(
+        field_name=field_name,
+        field_info=field_info,
+        search_url=search_url,
+        current_filters=current_filters,
+        profile=profile,
+        lang=lang,
+        schema=schema,
+    )
 
     if options:
         await _safe_edit(
@@ -680,8 +871,21 @@ async def cb_filter_edit_field(
             ),
             reply_markup=filter_options_kb(sid, callback_data.fidx, options, page=0, lang=lang),
         )
-        await state.update_data(options=options)
+        await state.update_data(
+            options=options,
+            option_source=option_source,
+            option_field_name=field_name,
+            option_fidx=callback_data.fidx,
+        )
     else:
+        if unavailable_message:
+            await _safe_edit(
+                callback,
+                sanitize_personal_ui_text(unavailable_message, locale=lang, profile=profile),
+                reply_markup=after_filter_kb(sid, lang=lang),
+            )
+            await callback.answer()
+            return
         # Free-text input
         await state.set_state(EditFilterFSM.waiting_value)
         await state.update_data(
@@ -728,6 +932,8 @@ async def cb_filter_opt(
     options: list = data.get("options", [])
     sid = callback_data.sid
     profile: str | None = data.get("profile")
+    field_order: list[str] = data.get("field_order", [])
+    option_field_name: str | None = data.get("option_field_name")
 
     if not schema:
         # Recover schema
@@ -740,20 +946,39 @@ async def cb_filter_opt(
                 return
             search_url = search.effective_url or search.url
             profile = search.category_profile or _autodetect_profile(search)
+            current_filters = filters_from_json(search.filters_json)
         finally:
             session.close()
         schema = await _get_schema(search_url)
-        await state.update_data(schema=schema, sid=sid, profile=profile)
+        fields = _sorted_fields(schema, lang, profile=profile)
+        field_order = [name for _, name, _label in fields]
+        await state.update_data(
+            schema=schema,
+            sid=sid,
+            profile=profile,
+            field_order=field_order,
+            current_filters=current_filters,
+            search_url=search_url,
+        )
 
-    field_name, field_info = _field_by_idx(schema, callback_data.fidx)
+    if option_field_name and option_field_name in schema:
+        field_name = option_field_name
+        field_info = schema[field_name]
+    else:
+        field_name, field_info = _field_by_idx(schema, field_order, callback_data.fidx)
     if field_name is None:
         await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
         return
 
     # Re-build options if not cached
     if not options:
-        raw_opts = field_info.get("options", [])
-        options = [o for o in raw_opts if str(o.get("value", "")).strip()]
+        options = _prepare_options_for_ui(
+            field_name=field_name,
+            options=field_info.get("options", []),
+            profile=profile,
+            lang=lang,
+            schema=schema,
+        )
 
     if callback_data.vidx < 0 or callback_data.vidx >= len(options):
         await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
@@ -802,6 +1027,9 @@ async def cb_page(
     data = await state.get_data()
     schema: dict = data.get("schema", {})
     profile: str | None = data.get("profile")
+    field_order: list[str] = data.get("field_order", [])
+    current_filters: dict = data.get("current_filters", {})
+    search_url: str = data.get("search_url", "")
 
     if not schema:
         session = session_factory()
@@ -817,15 +1045,31 @@ async def cb_page(
         finally:
             session.close()
         schema = await _get_schema(search_url)
+        fields = _sorted_fields(schema, lang, profile=profile)
+        field_order = [name for _, name, _label in fields]
         await state.update_data(
             schema=schema,
             sid=sid,
             profile=profile,
             current_filters=current_filters,
+            search_url=search_url,
+            field_order=field_order,
         )
+    elif not search_url:
+        session = session_factory()
+        try:
+            repo = SearchRepository(session)
+            search = repo.get_by_id(sid)
+            if search:
+                search_url = search.effective_url or search.url
+                await state.update_data(search_url=search_url)
+        finally:
+            session.close()
 
     if callback_data.ctx == "fields":
         fields = _sorted_fields(schema, lang, profile=profile)
+        field_order = [name for _, name, _label in fields]
+        await state.update_data(field_order=field_order)
         await _safe_edit(
             callback,
             get_text("filters_header", lang, sid=sid, content=""),
@@ -833,14 +1077,33 @@ async def cb_page(
         )
     elif callback_data.ctx == "opts":
         fidx = callback_data.fidx
-        field_name, field_info = _field_by_idx(schema, fidx)
+        field_name, field_info = _field_by_idx(schema, field_order, fidx)
         if field_name is None:
             await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
             return
-        options = [
-            o for o in field_info.get("options", [])
-            if str(o.get("value", "")).strip()
-        ]
+        options, unavailable_message, option_source = await _resolve_field_options(
+            field_name=field_name,
+            field_info=field_info,
+            search_url=search_url,
+            current_filters=current_filters,
+            profile=profile,
+            lang=lang,
+            schema=schema,
+        )
+        if unavailable_message:
+            await _safe_edit(
+                callback,
+                sanitize_personal_ui_text(unavailable_message, locale=lang, profile=profile),
+                reply_markup=after_filter_kb(sid, lang=lang),
+            )
+            await callback.answer()
+            return
+        await state.update_data(
+            options=options,
+            option_source=option_source,
+            option_field_name=field_name,
+            option_fidx=fidx,
+        )
         await _safe_edit(
             callback,
             _format_edit_prompt(
