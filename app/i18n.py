@@ -389,14 +389,19 @@ _T: dict[str, dict[str, str]] = {
         "en": "Example: BMW",
     },
     "filter_select_brand_first": {
-        "lv": "Vispirms izvēlieties marku.",
-        "ru": "Сначала выберите марку.",
-        "en": "Select brand first.",
+        "lv": "Vispirms izvēlieties automašīnas marku.",
+        "ru": "Сначала выберите марку автомобиля.",
+        "en": "Select a car brand first.",
     },
     "filter_options_unavailable": {
         "lv": "Šim filtram opcijas šobrīd nav pieejamas.",
         "ru": "Опции для этого фильтра сейчас недоступны.",
         "en": "Options for this filter are currently unavailable.",
+    },
+    "filter_model_reset_after_brand_change": {
+        "lv": "Marka nomainīta. Lūdzu, izvēlieties modeli atkārtoti.",
+        "ru": "Марка изменена. Пожалуйста, выберите модель заново.",
+        "en": "Brand changed. Please select the model again.",
     },
     "filter_option_unavailable": {
         "lv": "Opcija nav pieejama",
@@ -438,6 +443,31 @@ _T: dict[str, dict[str, str]] = {
         "lv": "Degvielas tips",
         "ru": "Тип топлива",
         "en": "Fuel type",
+    },
+    "filter_lbl_engine_type": {
+        "lv": "Dzinējs",
+        "ru": "Двигатель",
+        "en": "Engine type",
+    },
+    "filter_lbl_gearbox": {
+        "lv": "Pārnesumkārba",
+        "ru": "Коробка передач",
+        "en": "Gearbox",
+    },
+    "filter_lbl_color": {
+        "lv": "Krāsa",
+        "ru": "Цвет",
+        "en": "Color",
+    },
+    "filter_lbl_volume_from": {
+        "lv": "Tilpums no",
+        "ru": "Объём от",
+        "en": "Volume from",
+    },
+    "filter_lbl_volume_to": {
+        "lv": "Tilpums līdz",
+        "ru": "Объём до",
+        "en": "Volume to",
     },
     "filter_lbl_year_from": {
         "lv": "Gads no",

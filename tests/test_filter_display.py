@@ -97,7 +97,7 @@ def test_cars_profile_mapping_no_semantic_swaps():
     assert filter_display_label("opt[14]", locale="ru", profile="cars") == "Марка"
     assert filter_display_label("opt[15]", locale="ru", profile="cars") == "Модель"
     assert filter_display_label("opt[3]", locale="ru", profile="cars") == "Тип кузова"
-    assert filter_display_label("opt[4]", locale="ru", profile="cars") == "Тип топлива"
+    assert filter_display_label("opt[4]", locale="ru", profile="cars") == "Двигатель"
 
 
 def test_cars_profile_value_dictionaries_bound_to_correct_fields():

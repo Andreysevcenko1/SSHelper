@@ -38,6 +38,7 @@ from app.services.filters import (
     filters_from_json,
     sanitize_personal_ui_text,
 )
+from app.services.filter_registry import cars_registry_by_canonical_key
 from app.services.ss_parser import SSParser
 from app.filters.renderer import render_canonical_filters
 
@@ -48,7 +49,8 @@ router = Router()
 # Helpers                                                              #
 # ------------------------------------------------------------------ #
 
-_NUMERIC_KEYWORDS = ("min", "max", "price", "pr_", "year", "run", "area", "floor", "room")
+_NUMERIC_KEYWORDS = ("min", "max", "price", "pr_", "year", "run", "area", "floor", "room", "volume")
+_CARS_SPECS_BY_CANONICAL = cars_registry_by_canonical_key()
 
 
 def _is_numeric_field(name: str, field_type: str) -> bool:
@@ -67,6 +69,19 @@ async def _get_schema(url: str) -> dict:
 
 def _sorted_fields(schema: dict, lang: str = "lv", profile: str | None = None) -> list[tuple[int, str, str]]:
     """Return (index, name, label) tuples sorted by name, labels resolved via filter_display_label."""
+    if profile == "cars":
+        items: list[tuple[int, str, str]] = []
+        for idx, spec in enumerate(sorted(_CARS_SPECS_BY_CANONICAL.values(), key=lambda s: s.order)):
+            field_name = next((rk for rk in spec.raw_keys if rk in schema), None)
+            if field_name is None:
+                continue
+            field_info = schema[field_name]
+            if str(field_info.get("type", "")).lower() == "hidden":
+                continue
+            label = filter_display_label(field_name, schema, lang, profile=profile)
+            items.append((idx, field_name, label))
+        return items
+
     seen_canonical: set[str] = set()
     raw_items: list[tuple[str, dict, str]] = []
     for name, info in sorted(schema.items()):
@@ -132,10 +147,17 @@ def _is_mismatched_option_source(canonical_key: str, options: list[dict], locale
         return len(texts & known_fuel) > 0 or len(texts & known_body) > 0
     if canonical_key == "brand":
         return len(texts & known_fuel) > 0
-    if canonical_key == "fuel_type":
+    if canonical_key == "engine_type":
         return not bool(texts & known_fuel)
     if canonical_key == "body_type":
         return not bool(texts & known_body)
+    if canonical_key == "gearbox":
+        known_gearbox = {
+            "Механика", "Автомат", "Робот", "Вариатор",
+            "Manuāla", "Automāts", "Robota", "Variators",
+            "Manual", "Automatic", "Robot", "CVT",
+        }
+        return not bool(texts & known_gearbox)
     return False
 
 
@@ -149,13 +171,16 @@ def _prepare_options_for_ui(
 ) -> list[dict]:
     canonical = canonical_filter_key_for_profile(field_name, profile) or field_name
     prepared: list[dict] = []
+    strict_value_domains = {"engine_type", "gearbox", "body_type", "color"}
     for opt in options:
         value = str(opt.get("value", "")).strip()
         if not value:
             continue
         display_text = filter_value_label(field_name, value, locale=lang, profile=profile, schema=schema)
-        if display_text == value and not str(opt.get("text", "")).strip() and canonical in {
-            "brand", "model", "fuel_type", "body_type", "gearbox", "color", "city_district",
+        if display_text == value and canonical in strict_value_domains:
+            display_text = get_text("filter_option_unavailable", lang)
+        elif display_text == value and not str(opt.get("text", "")).strip() and canonical in {
+            "brand", "model", "engine_type", "body_type", "gearbox", "color", "city_district",
         }:
             display_text = get_text("filter_option_unavailable", lang)
         if display_text == value and str(opt.get("text", "")).strip():
@@ -241,7 +266,10 @@ async def _resolve_field_options(
 ) -> tuple[list[dict], str | None, str]:
     """Resolve options for a field with model-by-brand cascade and source guards."""
     canonical = canonical_filter_key_for_profile(field_name, profile) or field_name
+    spec = _CARS_SPECS_BY_CANONICAL.get(canonical) if profile == "cars" else None
     source = "schema"
+    if profile == "cars" and spec is None:
+        return [], get_text("filter_options_unavailable", lang), "unknown_canonical"
     options = [
         o for o in field_info.get("options", [])
         if str(o.get("value", "")).strip()
@@ -274,7 +302,17 @@ async def _resolve_field_options(
         schema=schema,
     )
 
-    if _is_mismatched_option_source(canonical, prepared, lang):
+    if spec and spec.option_provider_id in {"brand", "model", "engine_type", "gearbox", "body_type"}:
+        if _is_mismatched_option_source(canonical, prepared, lang):
+            logger.error(
+                "filter_option_source_guard: canonical_key=%s locale=%s option_source=%s option_count=%d",
+                canonical,
+                lang,
+                source,
+                len(prepared),
+            )
+            return [], get_text("filter_options_unavailable", lang), f"guard_mismatch:{canonical}"
+    elif _is_mismatched_option_source(canonical, prepared, lang):
         logger.error(
             "filter_option_source_guard: canonical_key=%s locale=%s option_source=%s option_count=%d",
             canonical,
@@ -288,10 +326,10 @@ async def _resolve_field_options(
         "filter_options_resolved: canonical_key=%s locale=%s option_source=%s option_count=%d",
         canonical,
         lang,
-        source,
+        spec.option_provider_id if spec else source,
         len(prepared),
     )
-    return prepared, None, source
+    return prepared, None, (spec.option_provider_id if spec else source)
 
 
 async def _safe_edit(callback: CallbackQuery, text: str, reply_markup=None) -> None:
@@ -986,6 +1024,8 @@ async def cb_filter_opt(
 
     chosen = options[callback_data.vidx]
     value = str(chosen.get("value", ""))
+    canonical = canonical_filter_key_for_profile(field_name, profile)
+    model_reset = False
     session = session_factory()
     try:
         repo = SearchRepository(session)
@@ -993,14 +1033,33 @@ async def cb_filter_opt(
         if search is None or search.user_id != user_id:
             await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
             return
+        existing_filters = filters_from_json(search.filters_json)
+        previous_brand = None
+        if canonical == "brand":
+            for raw_key, raw_value in existing_filters.items():
+                if canonical_filter_key_for_profile(raw_key, profile) == "brand":
+                    previous_brand = str(raw_value)
+                    break
         repo.set_filter(search, field_name, value)
+        if canonical == "brand" and previous_brand is not None and previous_brand != value:
+            # Brand changed; clear model to force fresh compatible selection.
+            model_raw_keys = [
+                key for key in filters_from_json(search.filters_json).keys()
+                if canonical_filter_key_for_profile(key, profile) == "model"
+            ]
+            for model_key in model_raw_keys:
+                repo.delete_filter(search, model_key)
+                model_reset = True
     finally:
         session.close()
 
     await state.clear()
     await _safe_edit(
         callback,
-        get_text("filter_set_ok", lang),
+        (
+            f"{get_text('filter_set_ok', lang)}\n\n{get_text('filter_model_reset_after_brand_change', lang)}"
+            if model_reset else get_text("filter_set_ok", lang)
+        ),
         reply_markup=after_filter_kb(sid, lang=lang),
     )
     await callback.answer()

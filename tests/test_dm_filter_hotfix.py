@@ -8,6 +8,7 @@ from app.bot.handlers.filter_cmds import _format_edit_prompt, _resolve_field_opt
 from app.bot.handlers.menu import _format_search_details
 from app.bot.keyboards.filters import filter_fields_kb
 from app.filters.renderer import render_canonical_filters
+from app.services.filter_registry import cars_registry_by_canonical_key
 
 _RAW_KEY_RE = re.compile(r"(opt|topt)\[", re.IGNORECASE)
 
@@ -71,8 +72,26 @@ def test_filter_fields_dedup_year_min_max_once():
     }
     fields = _sorted_fields(schema, lang="ru", profile="cars")
     labels = [label for _idx, _name, label in fields]
-    assert labels.count("Год (от)") == 1
-    assert labels.count("Год (до)") == 1
+    assert labels.count("Год от") == 1
+    assert labels.count("Год до") == 1
+
+
+def test_cars_dm_registry_has_exact_semantic_order():
+    specs = sorted(cars_registry_by_canonical_key().values(), key=lambda s: s.order)
+    assert [s.canonical_key for s in specs] == [
+        "price_min",
+        "price_max",
+        "year_min",
+        "year_max",
+        "volume_min",
+        "volume_max",
+        "engine_type",
+        "gearbox",
+        "body_type",
+        "color",
+        "brand",
+        "model",
+    ]
 
 
 def test_legacy_filters_render_correctly_for_cars_profile():
@@ -80,7 +99,7 @@ def test_legacy_filters_render_correctly_for_cars_profile():
     lines = render_canonical_filters(raw, "cars", locale="ru")
     joined = " ".join(lines)
     assert "Марка" in joined and "BMW" in joined
-    assert "Тип топлива" in joined and "Дизель" in joined
+    assert "Двигатель" in joined and "Дизель" in joined
     assert "Цена" in joined
     assert not _RAW_KEY_RE.search(joined)
 
@@ -157,7 +176,61 @@ async def test_model_options_scoped_by_selected_brand(monkeypatch):
         schema={"opt[15]": field_info},
     )
     assert message is None
-    assert source == "model_scoped_by_brand"
+    assert source == "model"
     texts = [o["display_text"] for o in options]
     assert "X5" in texts and "X3" in texts
     assert "Дизель" not in texts and "Универсал" not in texts
+
+
+@pytest.mark.asyncio
+async def test_body_options_are_not_gearbox(monkeypatch):
+    field_info = {"label": "", "type": "select", "options": [{"value": "2", "text": "Универсал"}]}
+    options, message, source = await _resolve_field_options(
+        field_name="opt[3]",
+        field_info=field_info,
+        search_url="https://www.ss.lv/lv/transport/cars/",
+        current_filters={"opt[14]": "BMW"},
+        profile="cars",
+        lang="ru",
+        schema={"opt[3]": field_info},
+    )
+    assert message is None
+    assert source == "body_type"
+    texts = [o["display_text"] for o in options]
+    assert "Универсал" in texts and "Автомат" not in texts
+
+
+@pytest.mark.asyncio
+async def test_gearbox_options_are_not_body(monkeypatch):
+    field_info = {"label": "", "type": "select", "options": [{"value": "2", "text": "Автомат"}]}
+    options, message, source = await _resolve_field_options(
+        field_name="opt[5]",
+        field_info=field_info,
+        search_url="https://www.ss.lv/lv/transport/cars/",
+        current_filters={"opt[14]": "BMW"},
+        profile="cars",
+        lang="ru",
+        schema={"opt[5]": field_info},
+    )
+    assert message is None
+    assert source == "gearbox"
+    texts = [o["display_text"] for o in options]
+    assert "Автомат" in texts and "Универсал" not in texts
+
+
+@pytest.mark.asyncio
+async def test_engine_options_are_engine_domain(monkeypatch):
+    field_info = {"label": "", "type": "select", "options": [{"value": "2", "text": "Дизель"}]}
+    options, message, source = await _resolve_field_options(
+        field_name="opt[4]",
+        field_info=field_info,
+        search_url="https://www.ss.lv/lv/transport/cars/",
+        current_filters={"opt[14]": "BMW"},
+        profile="cars",
+        lang="ru",
+        schema={"opt[4]": field_info},
+    )
+    assert message is None
+    assert source == "engine_type"
+    texts = [o["display_text"] for o in options]
+    assert "Дизель" in texts and "Автомат" not in texts
