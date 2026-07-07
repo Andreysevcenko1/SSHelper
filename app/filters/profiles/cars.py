@@ -5,7 +5,8 @@ for car searches on SS.lv.
 
 SS.lv transport/cars filter keys observed in the wild:
 
-  opt[14]            – make (Марка / Marka / Make)
+  opt[14]            – make/brand (Марка / Marka / Brand)
+  opt[15]            – model (Модель / Modelis / Model)
   opt[17]            – price from
   opt[32]            – price to
   topt[17][min/max]  – price range form
@@ -27,7 +28,8 @@ from __future__ import annotations
 
 RAW_TO_CANONICAL: dict[str, str] = {
     # make / model
-    "opt[14]": "make",
+    "opt[14]": "brand",
+    "opt[15]": "model",
     # price
     "opt[17]":      "price_min",
     "opt[32]":      "price_max",
@@ -47,7 +49,7 @@ RAW_TO_CANONICAL: dict[str, str] = {
     "topt[11][min]": "engine_min",
     "topt[11][max]": "engine_max",
     # fuel
-    "opt[4]": "fuel",
+    "opt[4]": "fuel_type",
     # gearbox
     "opt[5]": "gearbox",
     # body type
@@ -61,14 +63,15 @@ RAW_TO_CANONICAL: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 LABELS: dict[str, dict[str, str]] = {
-    "make":         {"lv": "Marka", "ru": "Марка", "en": "Make"},
+    "brand":        {"lv": "Marka", "ru": "Марка", "en": "Brand"},
+    "model":        {"lv": "Modelis", "ru": "Модель", "en": "Model"},
     "year_min":     {"lv": "Gads (no)", "ru": "Год (от)", "en": "Year (from)"},
     "year_max":     {"lv": "Gads (līdz)", "ru": "Год (до)", "en": "Year (to)"},
     "mileage_min":  {"lv": "Nobraukums, km (no)", "ru": "Пробег, км (от)", "en": "Mileage, km (from)"},
     "mileage_max":  {"lv": "Nobraukums, km (līdz)", "ru": "Пробег, км (до)", "en": "Mileage, km (to)"},
     "engine_min":   {"lv": "Tilpums, cm³ (no)", "ru": "Объём, см³ (от)", "en": "Engine, cm³ (from)"},
     "engine_max":   {"lv": "Tilpums, cm³ (līdz)", "ru": "Объём, см³ (до)", "en": "Engine, cm³ (to)"},
-    "fuel":         {"lv": "Degviela", "ru": "Топливо", "en": "Fuel"},
+    "fuel_type":    {"lv": "Degvielas tips", "ru": "Тип топлива", "en": "Fuel type"},
     "gearbox":      {"lv": "Ātrumkārba", "ru": "КПП", "en": "Gearbox"},
     "body_type":    {"lv": "Virsbūves tips", "ru": "Тип кузова", "en": "Body type"},
     "color":        {"lv": "Krāsa", "ru": "Цвет", "en": "Color"},
@@ -81,7 +84,7 @@ LABELS: dict[str, dict[str, str]] = {
 # ---------------------------------------------------------------------------
 
 OPTION_VALUES: dict[str, dict[str, dict[str, str]]] = {
-    "fuel": {
+    "fuel_type": {
         "1": {"lv": "Benzīns", "ru": "Бензин", "en": "Petrol"},
         "2": {"lv": "Dīzelis", "ru": "Дизель", "en": "Diesel"},
         "3": {"lv": "Gāze", "ru": "Газ", "en": "Gas"},
@@ -105,6 +108,14 @@ OPTION_VALUES: dict[str, dict[str, dict[str, str]]] = {
         "8":  {"lv": "Pikaps", "ru": "Пикап", "en": "Pickup"},
         "9":  {"lv": "Mikroautobuss", "ru": "Микроавтобус", "en": "Microbus"},
     },
+    # Popular brands used in DM UX (fallback to raw value if unknown).
+    "brand": {
+        "BMW": {"lv": "BMW", "ru": "BMW", "en": "BMW"},
+        "Mercedes": {"lv": "Mercedes", "ru": "Mercedes", "en": "Mercedes"},
+        "Audi": {"lv": "Audi", "ru": "Audi", "en": "Audi"},
+        "Volkswagen": {"lv": "Volkswagen", "ru": "Volkswagen", "en": "Volkswagen"},
+        "Skoda": {"lv": "Skoda", "ru": "Skoda", "en": "Skoda"},
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -112,14 +123,15 @@ OPTION_VALUES: dict[str, dict[str, dict[str, str]]] = {
 # ---------------------------------------------------------------------------
 
 DISPLAY_ORDER: list[str] = [
-    "make",
+    "brand",
+    "model",
     "year_min",
     "year_max",
     "mileage_min",
     "mileage_max",
     "engine_min",
     "engine_max",
-    "fuel",
+    "fuel_type",
     "gearbox",
     "body_type",
     "color",

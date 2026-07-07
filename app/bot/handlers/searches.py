@@ -14,7 +14,13 @@ from app.bot.keyboards.searches import (
 )
 from app.db.repo import SearchRepository
 from app.i18n import get_text, translate_category
-from app.services.filters import filter_display_label, filters_from_json
+from app.services.filters import (
+    base_url_without_query,
+    filter_display_label,
+    filter_value_label,
+    filters_from_json,
+    sanitize_personal_ui_text,
+)
 from app.filters.profiles import detect_profile
 from app.filters.renderer import render_canonical_filters
 from app.bot.utils import try_delete_message
@@ -58,8 +64,8 @@ async def cmd_list(message: Message, session_factory: sessionmaker[Session]) -> 
     for s in searches:
         status = get_text("status_active" if s.is_active else "status_paused", lang)
         category_label = translate_category(s.title, lang)
-        display_url = s.effective_url or s.url
-        entry = f"#{s.id} — {category_label} [{status}]\n🔗 {display_url}"
+        display_url = base_url_without_query(s.effective_url or s.url)
+        entry = f"#{s.id} — {category_label} [{status}]\n{get_text('search_detail_url', lang, url=display_url)}"
         filters = filters_from_json(s.filters_json)
         if filters:
             profile = s.category_profile or detect_profile(s.url or "")
@@ -68,7 +74,13 @@ async def cmd_list(message: Message, session_factory: sessionmaker[Session]) -> 
                 filter_str = ", ".join(p.strip().lstrip("• ") for p in filter_parts)
             else:
                 filter_str = ", ".join(
-                    f"{filter_display_label(k, locale=lang)}={v}" for k, v in filters.items()
+                    sanitize_personal_ui_text(
+                        f"{filter_display_label(k, locale=lang, profile=profile)}="
+                        f"{filter_value_label(k, v, locale=lang, profile=profile)}",
+                        locale=lang,
+                        profile=profile,
+                    )
+                    for k, v in filters.items()
                 )
             entry += f"\n🔍 {filter_str}"
         lines.append(entry)
@@ -213,4 +225,3 @@ def _parse_search_id(message: Message) -> int | None:
         return int(parts[1].strip())
     except ValueError:
         return None
-

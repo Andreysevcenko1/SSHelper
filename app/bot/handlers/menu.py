@@ -23,7 +23,13 @@ from app.db.repo import SearchRepository
 from app.filters.profiles import detect_profile
 from app.filters.renderer import render_canonical_filters
 from app.i18n import get_text, translate_category
-from app.services.filters import filter_display_label, filters_from_json
+from app.services.filters import (
+    base_url_without_query,
+    filter_display_label,
+    filter_value_label,
+    filters_from_json,
+    sanitize_personal_ui_text,
+)
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -46,23 +52,28 @@ async def _safe_edit(callback: CallbackQuery, text: str, reply_markup=None) -> N
 def _format_search_details(search, filters: dict, lang: str) -> str:
     category_label = translate_category(search.title, lang)
     status = get_text("status_active" if search.is_active else "status_paused", lang)
-    display_url = search.effective_url or search.url
+    display_url = base_url_without_query(search.effective_url or search.url)
+    profile = search.category_profile or detect_profile(search.effective_url or search.url or "")
     lines = [
         get_text("search_detail_header", lang, sid=search.id),
         get_text("search_detail_category", lang, cat=category_label),
         get_text("search_detail_status", lang, status=status),
-        f"🔗 {display_url}",
+        get_text("search_detail_url", lang, url=display_url),
     ]
     if not search.is_active:
         lines.append(f"\n⚠️ {get_text('err_already_paused', lang)}")
     if filters:
         lines.append(get_text("search_detail_active_filters", lang))
-        profile = search.category_profile or detect_profile(search.effective_url or search.url or "")
         if profile:
             lines.extend(render_canonical_filters(filters, profile, locale=lang))
         else:
             lines.extend(
-                f"  • {filter_display_label(k, locale=lang)}: {v}"
+                sanitize_personal_ui_text(
+                    f"  • {filter_display_label(k, locale=lang, profile=profile)}: "
+                    f"{filter_value_label(k, v, locale=lang, profile=profile)}",
+                    locale=lang,
+                    profile=profile,
+                )
                 for k, v in filters.items()
             )
     else:
@@ -345,7 +356,12 @@ async def cb_search_filters(
             content = "\n".join(render_canonical_filters(filters, profile, locale=lang))
         else:
             content = "\n".join(
-                f"  • {filter_display_label(k, locale=lang)}: {v}"
+                sanitize_personal_ui_text(
+                    f"  • {filter_display_label(k, locale=lang, profile=profile)}: "
+                    f"{filter_value_label(k, v, locale=lang, profile=profile)}",
+                    locale=lang,
+                    profile=profile,
+                )
                 for k, v in filters.items()
             )
     else:

@@ -8,7 +8,9 @@ from app.bot.keyboards.filters import filter_items_kb
 from app.services.filters import (
     canonical_filter_key,
     filter_display_label,
+    filter_value_label,
     normalize_filter_keys_for_display,
+    sanitize_personal_ui_text,
 )
 
 _RAW_KEY_PATTERN = re.compile(r"(opt|topt)\[", re.IGNORECASE)
@@ -31,10 +33,10 @@ def test_normalize_ss_query_keys_to_canonical():
         "brand",
         "model",
         "body_type",
-        "price_from",
-        "price_to",
-        "year_from",
-        "year_to",
+        "price_min",
+        "price_max",
+        "year_min",
+        "year_max",
     }
 
 
@@ -87,5 +89,25 @@ def test_keyboard_never_contains_raw_ss_keys():
 
 def test_canonical_filter_key_mapping_debug_contract():
     assert canonical_filter_key("opt[35]") == "body_type"
-    assert canonical_filter_key("topt[15][MAX]") == "price_to"
+    assert canonical_filter_key("topt[15][MAX]") == "price_max"
     assert canonical_filter_key("unknown") is None
+
+
+def test_cars_profile_mapping_no_semantic_swaps():
+    assert filter_display_label("opt[14]", locale="ru", profile="cars") == "Марка"
+    assert filter_display_label("opt[15]", locale="ru", profile="cars") == "Модель"
+    assert filter_display_label("opt[3]", locale="ru", profile="cars") == "Тип кузова"
+    assert filter_display_label("opt[4]", locale="ru", profile="cars") == "Тип топлива"
+
+
+def test_cars_profile_value_dictionaries_bound_to_correct_fields():
+    assert filter_value_label("opt[3]", "2", locale="ru", profile="cars") == "Универсал"
+    assert filter_value_label("opt[4]", "2", locale="ru", profile="cars") == "Дизель"
+    assert filter_value_label("opt[14]", "BMW", locale="ru", profile="cars") == "BMW"
+    assert filter_value_label("opt[15]", "2", locale="ru", profile="cars") == "2"
+
+
+def test_sanitize_personal_text_replaces_raw_tokens():
+    text = "Введите значение для opt[17] и topt[18][min]"
+    sanitized = sanitize_personal_ui_text(text, locale="ru", profile="cars")
+    assert "opt[" not in sanitized and "topt[" not in sanitized

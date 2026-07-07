@@ -29,7 +29,12 @@ from app.bot.states import EditFilterFSM
 from app.bot.utils import try_delete_message
 from app.db.repo import SearchRepository
 from app.i18n import get_text
-from app.services.filters import filters_from_json, filter_display_label
+from app.services.filters import (
+    filter_display_label,
+    filter_value_label,
+    filters_from_json,
+    sanitize_personal_ui_text,
+)
 from app.services.ss_parser import SSParser
 from app.filters.renderer import render_canonical_filters
 
@@ -57,11 +62,13 @@ async def _get_schema(url: str) -> dict:
         return {}
 
 
-def _sorted_fields(schema: dict, lang: str = "lv") -> list[tuple[int, str, str]]:
+def _sorted_fields(schema: dict, lang: str = "lv", profile: str | None = None) -> list[tuple[int, str, str]]:
     """Return (index, name, label) tuples sorted by name, labels resolved via filter_display_label."""
     items = []
     for i, (name, info) in enumerate(sorted(schema.items())):
-        label = filter_display_label(name, schema, lang)
+        if str(info.get("type", "")).lower() == "hidden":
+            continue
+        label = filter_display_label(name, schema, lang, profile=profile)
         items.append((i, name, label))
     return items
 
@@ -87,7 +94,11 @@ def _filters_lines(
     """
     if profile:
         return render_canonical_filters(filters, profile, locale=lang)
-    return [f"  • {filter_display_label(k, schema, lang)} = {v}" for k, v in filters.items()]
+    return [
+        f"  • {filter_display_label(k, schema, lang, profile=profile)} = "
+        f"{filter_value_label(k, v, locale=lang, profile=profile, schema=schema)}"
+        for k, v in filters.items()
+    ]
 
 
 def _autodetect_profile(search) -> str | None:
@@ -99,6 +110,32 @@ def _autodetect_profile(search) -> str | None:
     from app.filters.profiles import detect_profile
     url = search.url or ""
     return detect_profile(url)
+
+
+def _format_edit_prompt(
+    *,
+    lang: str,
+    field_name: str,
+    field_info: dict,
+    current_value: str | None,
+    profile: str | None,
+) -> str:
+    label = filter_display_label(field_name, schema={field_name: field_info}, locale=lang, profile=profile)
+    current = (
+        filter_value_label(
+            field_name,
+            current_value,
+            locale=lang,
+            profile=profile,
+            schema={field_name: field_info},
+        )
+        if current_value
+        else get_text("filter_current_value_missing", lang)
+    )
+    hint_key = "filter_hint_numeric" if _is_numeric_field(field_name, str(field_info.get("type", ""))) else "filter_hint_text"
+    hint = get_text(hint_key, lang)
+    prompt = get_text("filter_edit_prompt", lang, field=label, current=current, hint=hint)
+    return sanitize_personal_ui_text(prompt, locale=lang, profile=profile)
 
 
 async def _safe_edit(callback: CallbackQuery, text: str, reply_markup=None) -> None:
@@ -216,11 +253,18 @@ async def cmd_setfilter(
             return
         repo.set_filter(search, field, value)
         sid = search.id
+        profile = search.category_profile or _autodetect_profile(search)
     finally:
         session.close()
 
+    safe_label = filter_display_label(field, locale=lang, profile=profile)
+    safe_value = filter_value_label(field, value, locale=lang, profile=profile)
     await message.answer(
-        f"✅ <b>{filter_display_label(field)}</b> = <b>{value}</b> → #{sid}",
+        sanitize_personal_ui_text(
+            f"✅ <b>{safe_label}</b> = <b>{safe_value}</b> → #{sid}",
+            locale=lang,
+            profile=profile,
+        ),
         reply_markup=after_filter_kb(sid, lang=lang),
     )
 
@@ -275,8 +319,9 @@ async def cmd_delfilter(
         session.close()
 
     if not deleted:
+        safe_label = filter_display_label(field, locale=lang)
         await message.answer(
-            get_text("err_filter_key_not_found", lang, key=field),
+            get_text("err_filter_key_not_found", lang, key=safe_label),
             reply_markup=error_kb(back_search_id=sid, lang=lang),
         )
         return
@@ -386,7 +431,7 @@ async def cb_filter_show(
         lines += _filters_lines(filters, lang=lang, profile=profile)
         await _safe_edit(
             callback,
-            "\n".join(lines),
+            sanitize_personal_ui_text("\n".join(lines), locale=lang, profile=profile),
             reply_markup=filters_menu_kb(sid, bool(filters), lang=lang),
         )
 
@@ -426,7 +471,11 @@ async def cb_filter_del_start(
     else:
         content = "\n".join(_filters_lines(filters, lang=lang, profile=profile))
         text = get_text("filters_header", lang, sid=sid, content=content)
-        await _safe_edit(callback, text, reply_markup=filter_items_kb(sid, filters, lang=lang))
+        await _safe_edit(
+            callback,
+            sanitize_personal_ui_text(text, locale=lang),
+            reply_markup=filter_items_kb(sid, filters, lang=lang, profile=profile),
+        )
 
     await callback.answer()
 
@@ -451,6 +500,8 @@ async def cb_filter_edit_start(
             return
         search_url = search.effective_url or search.url
         sid = search.id
+        profile = search.category_profile or _autodetect_profile(search)
+        current_filters = filters_from_json(search.filters_json)
     finally:
         session.close()
 
@@ -465,8 +516,8 @@ async def cb_filter_edit_start(
         )
         return
 
-    fields = _sorted_fields(schema, lang)
-    await state.update_data(schema=schema, sid=sid)
+    fields = _sorted_fields(schema, lang, profile=profile)
+    await state.update_data(schema=schema, sid=sid, profile=profile, current_filters=current_filters)
 
     await _safe_edit(
         callback,
@@ -539,20 +590,26 @@ async def cb_filter_delete_key(
         deleted = repo.delete_filter(search, callback_data.key)
         filters = filters_from_json(search.filters_json)
         sid = search.id
+        profile = search.category_profile or _autodetect_profile(search)
     finally:
         session.close()
 
     if not deleted:
+        safe_label = filter_display_label(callback_data.key, locale=lang, profile=profile)
         await callback.answer(
-            get_text("err_filter_key_not_found", lang, key=callback_data.key),
+            get_text("err_filter_key_not_found", lang, key=safe_label),
             show_alert=True,
         )
         return
 
     if filters:
-        content = "\n".join(_filters_lines(filters, lang=lang))
+        content = "\n".join(_filters_lines(filters, lang=lang, profile=profile))
         text = get_text("filters_header", lang, sid=sid, content=content)
-        await _safe_edit(callback, text, reply_markup=filter_items_kb(sid, filters, lang=lang))
+        await _safe_edit(
+            callback,
+            sanitize_personal_ui_text(text, locale=lang, profile=profile),
+            reply_markup=filter_items_kb(sid, filters, lang=lang, profile=profile),
+        )
     else:
         await _safe_edit(
             callback,
@@ -581,6 +638,8 @@ async def cb_filter_edit_field(
     data = await state.get_data()
     schema: dict = data.get("schema", {})
     sid: int = data.get("sid", callback_data.sid)
+    profile: str | None = data.get("profile")
+    current_filters: dict = data.get("current_filters", {})
 
     # Re-fetch schema if not in state (e.g. after restart)
     if not schema:
@@ -593,17 +652,18 @@ async def cb_filter_edit_field(
                 return
             search_url = search.effective_url or search.url
             sid = search.id
+            profile = search.category_profile or _autodetect_profile(search)
+            current_filters = filters_from_json(search.filters_json)
         finally:
             session.close()
         schema = await _get_schema(search_url)
-        await state.update_data(schema=schema, sid=sid)
+        await state.update_data(schema=schema, sid=sid, profile=profile, current_filters=current_filters)
 
     field_name, field_info = _field_by_idx(schema, callback_data.fidx)
     if field_name is None:
         await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
         return
 
-    label = (field_info.get("label") or field_name).strip()
     options = field_info.get("options", [])
     # Filter out blank/empty options
     options = [o for o in options if str(o.get("value", "")).strip()]
@@ -611,7 +671,13 @@ async def cb_filter_edit_field(
     if options:
         await _safe_edit(
             callback,
-            get_text("filter_enter_value", lang, field=label),
+            _format_edit_prompt(
+                lang=lang,
+                field_name=field_name,
+                field_info=field_info,
+                current_value=current_filters.get(field_name),
+                profile=profile,
+            ),
             reply_markup=filter_options_kb(sid, callback_data.fidx, options, page=0, lang=lang),
         )
         await state.update_data(options=options)
@@ -620,13 +686,21 @@ async def cb_filter_edit_field(
         await state.set_state(EditFilterFSM.waiting_value)
         await state.update_data(
             field_name=field_name,
-            field_label=label,
+            field_label=filter_display_label(field_name, schema=schema, locale=lang, profile=profile),
+            field_info=field_info,
+            profile=profile,
             sid=sid,
             prompt_msg_id=callback.message.message_id,
         )
         await _safe_edit(
             callback,
-            get_text("filter_enter_value", lang, field=label),
+            _format_edit_prompt(
+                lang=lang,
+                field_name=field_name,
+                field_info=field_info,
+                current_value=current_filters.get(field_name),
+                profile=profile,
+            ),
             reply_markup=cancel_kb(sid, lang=lang),
         )
 
@@ -653,6 +727,7 @@ async def cb_filter_opt(
     schema: dict = data.get("schema", {})
     options: list = data.get("options", [])
     sid = callback_data.sid
+    profile: str | None = data.get("profile")
 
     if not schema:
         # Recover schema
@@ -664,10 +739,11 @@ async def cb_filter_opt(
                 await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
                 return
             search_url = search.effective_url or search.url
+            profile = search.category_profile or _autodetect_profile(search)
         finally:
             session.close()
         schema = await _get_schema(search_url)
-        await state.update_data(schema=schema, sid=sid)
+        await state.update_data(schema=schema, sid=sid, profile=profile)
 
     field_name, field_info = _field_by_idx(schema, callback_data.fidx)
     if field_name is None:
@@ -685,8 +761,6 @@ async def cb_filter_opt(
 
     chosen = options[callback_data.vidx]
     value = str(chosen.get("value", ""))
-    label = (field_info.get("label") or field_name).strip()
-
     session = session_factory()
     try:
         repo = SearchRepository(session)
@@ -727,6 +801,7 @@ async def cb_page(
     pg = callback_data.pg
     data = await state.get_data()
     schema: dict = data.get("schema", {})
+    profile: str | None = data.get("profile")
 
     if not schema:
         session = session_factory()
@@ -737,13 +812,20 @@ async def cb_page(
                 await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
                 return
             search_url = search.effective_url or search.url
+            profile = search.category_profile or _autodetect_profile(search)
+            current_filters = filters_from_json(search.filters_json)
         finally:
             session.close()
         schema = await _get_schema(search_url)
-        await state.update_data(schema=schema, sid=sid)
+        await state.update_data(
+            schema=schema,
+            sid=sid,
+            profile=profile,
+            current_filters=current_filters,
+        )
 
     if callback_data.ctx == "fields":
-        fields = _sorted_fields(schema, lang)
+        fields = _sorted_fields(schema, lang, profile=profile)
         await _safe_edit(
             callback,
             get_text("filters_header", lang, sid=sid, content=""),
@@ -759,10 +841,15 @@ async def cb_page(
             o for o in field_info.get("options", [])
             if str(o.get("value", "")).strip()
         ]
-        label = (field_info.get("label") or field_name).strip()
         await _safe_edit(
             callback,
-            get_text("filter_enter_value", lang, field=label),
+            _format_edit_prompt(
+                lang=lang,
+                field_name=field_name,
+                field_info=field_info,
+                current_value=(data.get("current_filters") or {}).get(field_name),
+                profile=profile,
+            ),
             reply_markup=filter_options_kb(sid, fidx, options, page=pg, lang=lang),
         )
 
@@ -785,6 +872,8 @@ async def fsm_filter_value(
     data = await state.get_data()
     field_name: str = data.get("field_name", "")
     field_label: str = data.get("field_label", field_name)
+    field_info: dict = data.get("field_info", {"name": field_name, "type": "text"})
+    profile: str | None = data.get("profile")
     sid: int = data.get("sid", 0)
     prompt_msg_id: int | None = data.get("prompt_msg_id")
     value = (message.text or "").strip()
@@ -800,14 +889,26 @@ async def fsm_filter_value(
                 await message.bot.edit_message_text(
                     chat_id=message.chat.id,
                     message_id=prompt_msg_id,
-                    text=get_text("filter_enter_value", lang, field=field_label),
+                    text=_format_edit_prompt(
+                        lang=lang,
+                        field_name=field_name,
+                        field_info=field_info,
+                        current_value=None,
+                        profile=profile,
+                    ),
                     reply_markup=cancel_kb(sid, lang=lang),
                 )
                 return
             except TelegramBadRequest:
                 pass
         await message.answer(
-            get_text("filter_enter_value", lang, field=field_label),
+            _format_edit_prompt(
+                lang=lang,
+                field_name=field_name,
+                field_info=field_info,
+                current_value=None,
+                profile=profile,
+            ),
             reply_markup=cancel_kb(sid, lang=lang),
         )
         return
