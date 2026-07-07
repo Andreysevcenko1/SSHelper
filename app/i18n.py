@@ -362,6 +362,41 @@ _T: dict[str, dict[str, str]] = {
         "ru": "Цена до",
         "en": "Price to",
     },
+    "filter_lbl_city_district": {
+        "lv": "Pilsēta/rajons",
+        "ru": "Город/район",
+        "en": "City/district",
+    },
+    "filter_lbl_brand": {
+        "lv": "Marka",
+        "ru": "Марка",
+        "en": "Brand",
+    },
+    "filter_lbl_model": {
+        "lv": "Modelis",
+        "ru": "Модель",
+        "en": "Model",
+    },
+    "filter_lbl_body_type": {
+        "lv": "Virsbūves tips",
+        "ru": "Тип кузова",
+        "en": "Body type",
+    },
+    "filter_lbl_year_from": {
+        "lv": "Gads no",
+        "ru": "Год от",
+        "en": "Year from",
+    },
+    "filter_lbl_year_to": {
+        "lv": "Gads līdz",
+        "ru": "Год до",
+        "en": "Year to",
+    },
+    "filter_lbl_parameter": {
+        "lv": "Parametrs",
+        "ru": "Параметр",
+        "en": "Parameter",
+    },
     "filter_lbl_opt": {
         "lv": "Filtrs",
         "ru": "Фильтр",

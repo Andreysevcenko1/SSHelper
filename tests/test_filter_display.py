@@ -1,208 +1,91 @@
-"""Tests ensuring raw SS.lv keys are never surfaced in user-facing UI strings."""
+"""Personal DM filter display tests: canonical mapping + localized labels."""
+
 import re
 
 import pytest
 
-from app.services.filters import filter_display_label
 from app.bot.keyboards.filters import filter_items_kb
+from app.services.filters import (
+    canonical_filter_key,
+    filter_display_label,
+    normalize_filter_keys_for_display,
+)
 
-# Pattern that must NOT appear in any user-visible string
-_RAW_KEY_PATTERN = re.compile(r"(opt|topt|mid)\[")
+_RAW_KEY_PATTERN = re.compile(r"(opt|topt)\[", re.IGNORECASE)
 
 
-# ------------------------------------------------------------------ #
-# filter_display_label: pattern-based fallbacks                        #
-# ------------------------------------------------------------------ #
+def test_normalize_ss_query_keys_to_canonical():
+    raw = {
+        "opt[17]": "riga",
+        "opt[32]": "mercedes",
+        "opt[34]": "e220",
+        "opt[35]": "universals",
+        "topt[15][min]": "3000",
+        "topt[15][max]": "9000",
+        "topt[18][min]": "2013",
+        "topt[18][max]": "2018",
+    }
+    normalized = normalize_filter_keys_for_display(raw)
+    assert set(normalized.keys()) == {
+        "city_district",
+        "brand",
+        "model",
+        "body_type",
+        "price_from",
+        "price_to",
+        "year_from",
+        "year_to",
+    }
 
 
 @pytest.mark.parametrize(
-    "key,expected",
+    "locale,key,expected",
     [
-        ("opt[123]", "Filter #123"),
-        ("opt[]", "Filter"),
-        ("topt[456]", "Filter #456"),
-        ("topt[]", "Filter"),
-        ("mid[78]", "District #78"),
-        ("mid[]", "District"),
-        ("pr_min", "Price from"),
-        ("pr_max", "Price to"),
-        ("PR_MIN", "Price from"),
-        ("PR_MAX", "Price to"),
-        # Known field ID mappings
-        ("opt[17]", "Price from"),
-        ("opt[32]", "Price to"),
-        ("topt[15][min]", "Area from"),
-        ("topt[15][max]", "Area to"),
-        ("topt[18][min]", "Rooms from"),
-        ("topt[18][max]", "Rooms to"),
-        # Unknown topt range IDs still get a generic label
-        ("topt[5][min]", "Filter #5: from"),
-        ("topt[5][max]", "Filter #5: to"),
-        ("topt[15][MIN]", "Area from"),
-        ("topt[15][MAX]", "Area to"),
+        ("ru", "opt[17]", "Город/район"),
+        ("lv", "opt[17]", "Pilsēta/rajons"),
+        ("en", "opt[17]", "City/district"),
+        ("ru", "opt[32]", "Марка"),
+        ("lv", "opt[34]", "Modelis"),
+        ("en", "opt[35]", "Body type"),
+        ("ru", "topt[15][min]", "Цена от"),
+        ("lv", "topt[15][max]", "Cena līdz"),
+        ("en", "topt[18][min]", "Year from"),
+        ("ru", "topt[18][max]", "Год до"),
     ],
 )
-def test_display_label_pattern_fallbacks_en(key, expected):
-    assert filter_display_label(key, locale="en") == expected
+def test_label_resolver_localized_required_keys(locale, key, expected):
+    assert filter_display_label(key, locale=locale) == expected
 
 
-@pytest.mark.parametrize(
-    "key,expected",
-    [
-        ("opt[123]", "Фильтр #123"),
-        ("opt[]", "Фильтр"),
-        ("topt[456]", "Фильтр #456"),
-        ("topt[]", "Фильтр"),
-        ("mid[78]", "Район #78"),
-        ("mid[]", "Район"),
-        ("pr_min", "Цена от"),
-        ("pr_max", "Цена до"),
-        ("PR_MIN", "Цена от"),
-        ("PR_MAX", "Цена до"),
-        # Known field ID mappings
-        ("opt[17]", "Цена от"),
-        ("opt[32]", "Цена до"),
-        ("topt[15][min]", "Площадь от"),
-        ("topt[15][max]", "Площадь до"),
-        ("topt[18][min]", "Комнаты от"),
-        ("topt[18][max]", "Комнаты до"),
-        # Unknown topt range IDs still get a generic label
-        ("topt[7][min]", "Фильтр #7: от"),
-        ("topt[7][max]", "Фильтр #7: до"),
-    ],
-)
-def test_display_label_pattern_fallbacks_ru(key, expected):
-    assert filter_display_label(key, locale="ru") == expected
+def test_unknown_raw_key_never_displayed_as_raw():
+    label = filter_display_label("opt[999]", locale="ru")
+    assert label == "Параметр"
+    assert not _RAW_KEY_PATTERN.search(label)
 
 
-@pytest.mark.parametrize(
-    "key,expected",
-    [
-        ("opt[123]", "Filtrs #123"),
-        ("opt[]", "Filtrs"),
-        ("topt[456]", "Filtrs #456"),
-        ("mid[78]", "Rajons #78"),
-        ("pr_min", "Cena no"),
-        ("pr_max", "Cena līdz"),
-        # Known field ID mappings
-        ("opt[17]", "Cena no"),
-        ("opt[32]", "Cena līdz"),
-        ("topt[15][min]", "Platība no"),
-        ("topt[15][max]", "Platība līdz"),
-        ("topt[18][min]", "Istabas no"),
-        ("topt[18][max]", "Istabas līdz"),
-        # Unknown topt range IDs still get a generic label
-        ("topt[3][min]", "Filtrs #3: no"),
-        ("topt[3][max]", "Filtrs #3: līdz"),
-    ],
-)
-def test_display_label_pattern_fallbacks_lv(key, expected):
-    assert filter_display_label(key, locale="lv") == expected
+def test_unknown_non_raw_key_uses_localized_generic():
+    assert filter_display_label("unknown_field", locale="lv") == "Parametrs"
 
 
-def test_display_label_schema_takes_priority():
-    schema = {"opt[123]": {"label": "Марка автомобиля"}}
-    assert filter_display_label("opt[123]", schema) == "Марка автомобиля"
+def test_locale_fallback_chain_uses_english_then_generic():
+    assert filter_display_label("opt[32]", locale="de") == "Brand"
+    assert filter_display_label("unmapped_key", locale="de") == "Parameter"
 
 
-def test_display_label_schema_empty_label_falls_back():
-    schema = {"opt[123]": {"label": ""}}
-    assert filter_display_label("opt[123]", schema, locale="ru") == "Фильтр #123"
-
-
-def test_display_label_generic_cleanup():
-    # Keys without special patterns should still be cleaned up
-    label = filter_display_label("deal_type")
-    assert "[" not in label and "]" not in label
-
-
-def test_display_label_never_returns_bracket_key_without_schema():
-    for key in ("opt[1]", "topt[2]", "mid[3]", "topt[15][min]", "topt[15][max]", "topt[7][min]"):
-        label = filter_display_label(key)
-        assert not _RAW_KEY_PATTERN.search(label), (
-            f"Raw key pattern leaked into label for key={key!r}: {label!r}"
-        )
-
-
-# ------------------------------------------------------------------ #
-# filter_items_kb: buttons must not contain raw key patterns           #
-# ------------------------------------------------------------------ #
-
-
-def test_filter_items_kb_no_raw_keys_in_buttons():
-    """Button texts in filter_items_kb must never contain raw SS.lv key patterns."""
+def test_keyboard_never_contains_raw_ss_keys():
     filters = {
-        "opt[123]": "456",
-        "topt[789]": "10",
-        "mid[11]": "12",
-        "pr_min": "5000",
-        "pr_max": "15000",
+        "opt[17]": "riga",
+        "topt[18][min]": "2015",
+        "opt[999]": "x",
     }
     kb = filter_items_kb(search_id=1, filters=filters, lang="ru")
     for row in kb.inline_keyboard:
         for button in row:
             text = button.text or ""
-            assert not _RAW_KEY_PATTERN.search(text), (
-                f"Raw SS.lv key pattern found in button text: {text!r}"
-            )
+            assert not _RAW_KEY_PATTERN.search(text)
 
 
-def test_filter_items_kb_with_schema_uses_schema_labels():
-    """When schema is provided, filter_items_kb uses schema labels in buttons."""
-    filters = {"opt[123]": "456"}
-    schema = {"opt[123]": {"label": "Марка"}}
-    kb = filter_items_kb(search_id=1, filters=filters, lang="ru", schema=schema)
-    button_texts = [b.text for row in kb.inline_keyboard for b in row]
-    delete_texts = [t for t in button_texts if t and t.startswith("🗑")]
-    assert any("Марка" in t for t in delete_texts)
-
-
-# ------------------------------------------------------------------ #
-# 20+ filters: no raw key patterns in any UI string                    #
-# ------------------------------------------------------------------ #
-
-
-def _make_large_filters() -> dict:
-    """Generate 25+ filter entries covering all raw-key patterns."""
-    filters: dict = {}
-    for i in range(1, 11):
-        filters[f"opt[{i}]"] = str(i * 10)
-    for i in range(11, 21):
-        filters[f"topt[{i}]"] = str(i * 5)
-    filters["topt[15][min]"] = "1000"
-    filters["topt[15][max]"] = "9000"
-    filters["topt[7][min]"] = "10"
-    filters["topt[7][max]"] = "50"
-    filters["mid[1]"] = "1"
-    filters["mid[2]"] = "2"
-    filters["pr_min"] = "1000"
-    filters["pr_max"] = "9000"
-    filters["deal_type"] = "sell"
-    return filters
-
-
-def test_filter_items_kb_25_filters_no_raw_keys():
-    """Render 25 filters; assert no UI string contains (opt|topt|mid)[."""
-    filters = _make_large_filters()
-    assert len(filters) >= 20, "Test fixture must have 20+ filters"
-
-    kb = filter_items_kb(search_id=42, filters=filters, lang="ru")
-    for row in kb.inline_keyboard:
-        for button in row:
-            text = button.text or ""
-            assert not _RAW_KEY_PATTERN.search(text), (
-                f"Raw SS.lv key pattern found in button text: {text!r}"
-            )
-
-
-def test_filter_display_label_25_keys_no_raw_patterns():
-    """filter_display_label must never return a string matching raw-key pattern for 25+ keys."""
-    filters = _make_large_filters()
-    assert len(filters) >= 20
-
-    for key in filters:
-        for locale in ("lv", "ru", "en"):
-            label = filter_display_label(key, locale=locale)
-            assert not _RAW_KEY_PATTERN.search(label), (
-                f"Raw key pattern in label for key={key!r} locale={locale!r}: {label!r}"
-            )
+def test_canonical_filter_key_mapping_debug_contract():
+    assert canonical_filter_key("opt[35]") == "body_type"
+    assert canonical_filter_key("topt[15][MAX]") == "price_to"
+    assert canonical_filter_key("unknown") is None

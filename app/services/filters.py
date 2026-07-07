@@ -5,29 +5,52 @@ import re
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from app.i18n import get_text
+from app.services.filter_registry import registry_reverse_map
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# SS.lv raw-key patterns used for human-readable display labels
-# ---------------------------------------------------------------------------
-_RE_OPT = re.compile(r"^(?:topt|opt)\[(\d*)\]$", re.IGNORECASE)
-_RE_TOPT_RANGE = re.compile(r"^topt\[(\d+)\]\[(min|max)\]$", re.IGNORECASE)
-_RE_MID = re.compile(r"^mid\[([^\]]*)\]$", re.IGNORECASE)
-_RE_PRICE_MIN = re.compile(r"^(?:pr_?min|price_?(?:min|from))$", re.IGNORECASE)
-_RE_PRICE_MAX = re.compile(r"^(?:pr_?max|price_?(?:max|to))$", re.IGNORECASE)
+_RE_RAW_SS_KEY = re.compile(r"^(?:opt|topt)\[.*\]$", re.IGNORECASE)
+_RE_RAW_SS_KEY_EXT = re.compile(r"^(?:opt|topt|mid)\[.*\]$", re.IGNORECASE)
+_REGISTRY_MAP = registry_reverse_map()
 
-# Known SS.lv opt[N] field IDs → i18n label key (single-value option fields)
-_OPT_ID_LABEL_MAP: dict[str, str] = {
-    "17": "filter_lbl_price_from",
-    "32": "filter_lbl_price_to",
-}
 
-# Known SS.lv topt[N] field IDs → (min_label_key, max_label_key) for range fields
-_TOPT_ID_LABEL_MAP: dict[str, tuple[str, str]] = {
-    "15": ("filter_lbl_area_from", "filter_lbl_area_to"),
-    "18": ("filter_lbl_rooms_from", "filter_lbl_rooms_to"),
-}
+def _normalize_query_key(key: str) -> str:
+    return re.sub(r"\s+", "", key.strip()).lower()
+
+
+def _resolve_localized_text(text_key: str, locale: str) -> str:
+    preferred = locale if locale in {"ru", "lv", "en"} else "en"
+    text = get_text(text_key, preferred)
+    if text != text_key:
+        return text
+    text_en = get_text(text_key, "en")
+    if text_en != text_key:
+        return text_en
+    generic_key = {
+        "ru": "filter_lbl_parameter",
+        "lv": "filter_lbl_parameter",
+        "en": "filter_lbl_parameter",
+    }[preferred]
+    return get_text(generic_key, preferred)
+
+
+def canonical_filter_key(raw_key: str) -> str | None:
+    normalized = _normalize_query_key(raw_key)
+    spec = _REGISTRY_MAP.get(normalized)
+    canonical = spec.canonical_key if spec else None
+    logger.debug("filter_key_map: raw_key=%r -> canonical_key=%r", raw_key, canonical)
+    return canonical
+
+
+def normalize_filter_keys_for_display(
+    filters: dict[str, str | list[str]],
+) -> dict[str, str | list[str]]:
+    """Return canonicalized key dict for display purposes (no behavior changes)."""
+    result: dict[str, str | list[str]] = {}
+    for raw_key, value in filters.items():
+        canonical = canonical_filter_key(raw_key) or _normalize_query_key(raw_key)
+        result[canonical] = value
+    return result
 
 
 def filter_display_label(
@@ -35,107 +58,39 @@ def filter_display_label(
     schema: dict | None = None,
     locale: str = "lv",
 ) -> str:
-    """Return a human-readable display label for a raw SS.lv filter key.
+    """Return localized, user-friendly label for a filter key in DM UI."""
+    normalized = _normalize_query_key(key)
+    spec = _REGISTRY_MAP.get(normalized)
+    if spec is not None:
+        resolved = _resolve_localized_text(spec.label_i18n_key, locale)
+        logger.debug(
+            "filter_label_resolve: canonical_key=%s locale=%s -> label=%r",
+            spec.canonical_key,
+            locale,
+            resolved,
+        )
+        return resolved
 
-    Priority:
-    1. ``schema[key]["label"]`` when schema is provided.
-    2. Pattern-based i18n fallbacks for common SS.lv key shapes
-       (``opt[N]``/``topt[N]`` → "Фильтр #N", ``mid[N]`` → "Район #N",
-       ``pr_min`` → "Цена от", ``pr_max`` → "Цена до").
-    3. Generic cleanup: remove brackets, replace underscores with spaces.
-
-    The raw key is **never** returned as-is when it looks like an SS.lv
-    internal parameter (i.e. contains ``[`` or ``]``).
-
-    Args:
-        key: Raw SS.lv filter parameter name.
-        schema: Optional dict mapping key → ``{"label": ..., "options": ...}``.
-        locale: BCP-47 language tag used for i18n fallback strings.
-    """
-    resolved: str
-
-    # 1. Schema lookup
     if schema:
-        info = schema.get(key)
+        info = schema.get(key) or schema.get(normalized)
         if info:
-            lbl = (info.get("label") or "").strip()
-            if lbl:
-                resolved = lbl
+            lbl = re.sub(r"\s+", " ", str(info.get("label") or "").strip())
+            if lbl and not _RE_RAW_SS_KEY_EXT.search(lbl):
                 logger.debug(
-                    "filter_display_label: key=%r locale=%s → %r (schema)",
-                    key, locale, resolved,
+                    "filter_label_resolve: canonical_key=%s locale=%s -> label=%r (schema)",
+                    normalized,
+                    locale,
+                    lbl,
                 )
-                return resolved
+                return lbl
 
-    # 2. Pattern-based i18n fallbacks
-    if _RE_PRICE_MIN.match(key):
-        resolved = get_text("filter_lbl_price_from", locale)
-        logger.debug(
-            "filter_display_label: key=%r locale=%s → %r (price_min pattern)",
-            key, locale, resolved,
-        )
-        return resolved
-
-    if _RE_PRICE_MAX.match(key):
-        resolved = get_text("filter_lbl_price_to", locale)
-        logger.debug(
-            "filter_display_label: key=%r locale=%s → %r (price_max pattern)",
-            key, locale, resolved,
-        )
-        return resolved
-
-    m = _RE_TOPT_RANGE.match(key)
-    if m:
-        n, bound = m.group(1), m.group(2).lower()
-        id_labels = _TOPT_ID_LABEL_MAP.get(n)
-        if id_labels:
-            text_key = id_labels[0] if bound == "min" else id_labels[1]
-            resolved = get_text(text_key, locale)
-        else:
-            suffix = get_text(
-                "filter_lbl_range_min" if bound == "min" else "filter_lbl_range_max", locale
-            )
-            base = get_text("filter_lbl_opt", locale)
-            resolved = f"{base} #{n}: {suffix}"
-        logger.debug(
-            "filter_display_label: key=%r locale=%s → %r (topt range pattern)",
-            key, locale, resolved,
-        )
-        return resolved
-
-    m = _RE_OPT.match(key)
-    if m:
-        n = m.group(1)
-        id_label = _OPT_ID_LABEL_MAP.get(n) if n else None
-        if id_label:
-            resolved = get_text(id_label, locale)
-        else:
-            base = get_text("filter_lbl_opt", locale)
-            resolved = f"{base} #{n}" if n else base
-        logger.debug(
-            "filter_display_label: key=%r locale=%s → %r (opt pattern)",
-            key, locale, resolved,
-        )
-        return resolved
-
-    m = _RE_MID.match(key)
-    if m:
-        n = m.group(1)
-        base = get_text("filter_lbl_district", locale)
-        resolved = f"{base} #{n}" if n else base
-        logger.debug(
-            "filter_display_label: key=%r locale=%s → %r (mid pattern)",
-            key, locale, resolved,
-        )
-        return resolved
-
-    # 3. Generic cleanup: drop brackets, underscores → spaces
-    cleaned = re.sub(r"[\[\]]", "", key).replace("_", " ").strip()
-    cleaned = re.sub(r"\s+", " ", cleaned)
-    resolved = cleaned or key
+    # Safety net: unresolved or raw SS keys must never be shown to users.
+    resolved = _resolve_localized_text("filter_lbl_parameter", locale)
     logger.debug(
-        "filter_display_label: key=%r locale=%s → %r (generic cleanup)",
-        key, locale, resolved,
+        "filter_label_resolve: canonical_key=%s locale=%s -> label=%r (generic)",
+        normalized,
+        locale,
+        resolved,
     )
     return resolved
 
@@ -143,7 +98,7 @@ def filter_display_label(
 def extract_filters_from_url(url: str) -> dict[str, str | list[str]]:
     """Extract query parameters from a URL as a normalised dict."""
     parsed = urlparse(url)
-    params = parse_qs(parsed.query, keep_blank_values=False)
+    params = parse_qs(parsed.query, keep_blank_values=False, encoding="utf-8", errors="replace")
     result: dict[str, str | list[str]] = {}
     for key, values in params.items():
         result[key] = values[0] if len(values) == 1 else values

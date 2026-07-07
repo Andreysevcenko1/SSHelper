@@ -4,9 +4,11 @@ import pytest
 from app.services.filters import (
     base_url_without_query,
     build_effective_url,
+    canonical_filter_key,
     extract_filters_from_url,
     filters_from_json,
     filters_to_json,
+    normalize_filter_keys_for_display,
     normalize_filters,
 )
 
@@ -71,6 +73,16 @@ def test_normalize_filters_drops_empty():
     result = normalize_filters(raw)
     assert "key" not in result
     assert result["good"] == "val"
+
+
+def test_normalize_filter_keys_for_display_known_ss_keys():
+    raw = {"opt[17]": "riga", "topt[15][min]": "1000", "topt[18][max]": "2020"}
+    normalized = normalize_filter_keys_for_display(raw)
+    assert normalized == {"city_district": "riga", "price_from": "1000", "year_to": "2020"}
+
+
+def test_canonical_filter_key_is_case_insensitive():
+    assert canonical_filter_key("topt[15][MAX]") == "price_to"
 
 
 # ------------------------------------------------------------------ #
