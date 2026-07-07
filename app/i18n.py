@@ -383,6 +383,31 @@ _T: dict[str, dict[str, str]] = {
         "ru": "Пример: 5000",
         "en": "Example: 5000",
     },
+    "filter_hint_price": {
+        "lv": "Piemērs: 5000",
+        "ru": "Пример: 5000",
+        "en": "Example: 5000",
+    },
+    "filter_hint_year": {
+        "lv": "Piemērs: 2018",
+        "ru": "Пример: 2018",
+        "en": "Example: 2018",
+    },
+    "filter_hint_volume": {
+        "lv": "Piemērs: 2.0",
+        "ru": "Пример: 2.0",
+        "en": "Example: 2.0",
+    },
+    "filter_hint_select": {
+        "lv": "Izvēlieties vērtību no saraksta zemāk.",
+        "ru": "Выберите значение из списка ниже.",
+        "en": "Choose a value from the list below.",
+    },
+    "filter_input_mode_error": {
+        "lv": "Filtra ievades kļūda. Lūdzu, mēģiniet vēlreiz.",
+        "ru": "Ошибка режима ввода фильтра. Пожалуйста, попробуйте ещё раз.",
+        "en": "Filter input mode error. Please try again.",
+    },
     "filter_hint_text": {
         "lv": "Piemērs: BMW",
         "ru": "Пример: BMW",

@@ -102,23 +102,29 @@ def no_filters_kb(search_id: int, lang: str = "lv") -> InlineKeyboardMarkup:
 
 def filter_fields_kb(
     search_id: int,
-    fields: list[tuple[int, str, str]],  # (global_idx, name, label)
+    fields: list[tuple],  # (global_idx, name, label[, canonical_key])
     page: int = 0,
     lang: str = "lv",
 ) -> InlineKeyboardMarkup:
-    """Paginated list of filter schema fields for selection."""
+    """Paginated list of filter schema fields for selection.
+
+    Each field tuple may carry an optional 4th element: the canonical filter
+    key, embedded in the callback payload for strict routing.
+    """
     b = InlineKeyboardBuilder()
     start = page * _PAGE_SIZE_FIELDS
     end = start + _PAGE_SIZE_FIELDS
     page_fields = fields[start:end]
 
-    for idx, _name, label in page_fields:
+    for item in page_fields:
+        idx, _name, label = item[0], item[1], item[2]
+        ck = str(item[3]) if len(item) > 3 else ""
         display = sanitize_personal_ui_text(label, locale=lang)
         if len(display) > 32:
             display = display[:30] + "…"
         b.button(
             text=display,
-            callback_data=FilterEditCB(sid=search_id, fidx=idx, pg=page),
+            callback_data=FilterEditCB(sid=search_id, fidx=idx, pg=page, ck=ck),
         )
 
     # Pagination nav
@@ -160,6 +166,7 @@ def filter_options_kb(
     options: list[dict],
     page: int = 0,
     lang: str = "lv",
+    ck: str = "",
 ) -> InlineKeyboardMarkup:
     """Paginated list of select options for a specific filter field."""
     b = InlineKeyboardBuilder()
@@ -175,17 +182,17 @@ def filter_options_kb(
             text = text[:30] + "…"
         b.button(
             text=text,
-            callback_data=FilterOptCB(sid=search_id, fidx=fidx, vidx=vidx, pg=page),
+            callback_data=FilterOptCB(sid=search_id, fidx=fidx, vidx=vidx, pg=page, ck=ck),
         )
 
     nav = []
     if page > 0:
         nav.append(
-            (get_text("btn_prev_page", lang), PageCB(ctx="opts", sid=search_id, fidx=fidx, pg=page - 1))
+            (get_text("btn_prev_page", lang), PageCB(ctx="opts", sid=search_id, fidx=fidx, pg=page - 1, ck=ck))
         )
     if end < len(options):
         nav.append(
-            (get_text("btn_next_page", lang), PageCB(ctx="opts", sid=search_id, fidx=fidx, pg=page + 1))
+            (get_text("btn_next_page", lang), PageCB(ctx="opts", sid=search_id, fidx=fidx, pg=page + 1, ck=ck))
         )
     for label, cb in nav:
         b.button(text=label, callback_data=cb)
