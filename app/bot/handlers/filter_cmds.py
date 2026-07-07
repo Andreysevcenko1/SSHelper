@@ -57,6 +57,22 @@ _CARS_SPECS_BY_CANONICAL = cars_registry_by_canonical_key()
 _RE_BRAND_LINK = re.compile(r"/(?P<lang>lv|ru|en)/transport/cars/(?P<slug>[a-z0-9][a-z0-9-]*)/", re.IGNORECASE)
 _RE_NON_SLUG = re.compile(r"[^a-z0-9-]+")
 
+# Path segments under /transport/cars/ that are sections, not car brands.
+_NON_BRAND_SLUGS: frozenset[str] = frozenset({
+    "rare-cars", "exchange", "other", "all", "new", "today", "search",
+    "filter", "rss", "spare-parts", "sell", "buy", "change", "hand-over",
+})
+
+# Maintained fallback used when the live brand fetch fails (task B).
+_FALLBACK_BRAND_SLUGS: tuple[str, ...] = (
+    "alfa-romeo", "audi", "bmw", "chevrolet", "chrysler", "citroen", "dacia",
+    "dodge", "fiat", "ford", "honda", "hyundai", "jaguar", "jeep", "kia",
+    "land-rover", "lexus", "mazda", "mercedes", "mini", "mitsubishi",
+    "nissan", "opel", "peugeot", "porsche", "renault", "saab", "seat",
+    "skoda", "smart", "subaru", "suzuki", "tesla", "toyota", "volkswagen",
+    "volvo",
+)
+
 
 def _cars_lang_from_url(url: str) -> str:
     path = urlparse(url).path
@@ -90,11 +106,19 @@ def _extract_brand_slug_options_from_html(html: str, lang: str) -> list[dict]:
         if match.group("lang").lower() != lang:
             continue
         slug = _normalize_brand_slug(match.group("slug"))
-        if not slug or slug in seen:
+        if not slug or slug in seen or slug in _NON_BRAND_SLUGS:
             continue
         seen.add(slug)
         options.append({"value": slug, "text": _brand_display_name(slug)})
     return sorted(options, key=lambda o: o["text"])
+
+
+def _fallback_brand_slug_options() -> list[dict]:
+    """Maintained brand slug list used when the live fetch fails."""
+    return [
+        {"value": slug, "text": _brand_display_name(slug)}
+        for slug in sorted(_FALLBACK_BRAND_SLUGS, key=_brand_display_name)
+    ]
 
 
 async def _fetch_brand_slug_options(search_url: str, lang: str) -> list[dict]:
@@ -109,8 +133,12 @@ async def _fetch_brand_slug_options(search_url: str, lang: str) -> list[dict]:
                 html = await response.text()
     except Exception as exc:
         logger.warning("filter_cmds: failed to fetch brand slugs from %s: %s", cars_root, exc)
-        return []
-    return _extract_brand_slug_options_from_html(html, lang)
+        return _fallback_brand_slug_options()
+    options = _extract_brand_slug_options_from_html(html, lang)
+    if not options:
+        logger.warning("filter_cmds: no brand slugs parsed from %s, using fallback list", cars_root)
+        return _fallback_brand_slug_options()
+    return options
 
 
 def _rewrite_cars_brand_slug_in_url(url: str, brand_slug: str) -> str:
@@ -133,6 +161,52 @@ def _is_numeric_field(name: str, field_type: str) -> bool:
     return field_type in {"number"} or any(kw in name_lower for kw in _NUMERIC_KEYWORDS)
 
 
+def _spec_for_canonical(canonical_key: str):
+    """Return the cars registry spec for a canonical key, or None."""
+    return _CARS_SPECS_BY_CANONICAL.get(canonical_key)
+
+
+def _resolve_field_by_canonical(schema: dict, canonical_key: str) -> tuple[str, dict] | tuple[None, None]:
+    """Strict routing: resolve schema field from an explicit canonical key.
+
+    Falls back to a synthetic select field for path-based keys (brand) whose
+    options do not come from the schema at all.
+    """
+    spec = _spec_for_canonical(canonical_key)
+    if spec is None:
+        return None, None
+    for raw_key in spec.raw_keys:
+        if raw_key in schema:
+            return raw_key, schema[raw_key]
+    if spec.ss_param_mode == "path" or spec.canonical_key == "brand":
+        return spec.raw_keys[0], {"label": "", "type": "select", "options": []}
+    return None, None
+
+
+def _input_mode_for(field_name: str, field_info: dict, profile: str | None) -> str:
+    """Resolve input mode. For cars, the registry is the only authority."""
+    if profile == "cars":
+        canonical = canonical_filter_key_for_profile(field_name, profile)
+        spec = _spec_for_canonical(canonical) if canonical else None
+        if spec is not None:
+            return spec.input_mode
+    if _is_numeric_field(field_name, str(field_info.get("type", ""))):
+        return "numeric"
+    return "select" if field_info.get("options") else "numeric"
+
+
+def _prompt_hint_key(field_name: str, field_info: dict, profile: str | None) -> str:
+    """Per-canonical-key localized prompt hint (task I)."""
+    if profile == "cars":
+        canonical = canonical_filter_key_for_profile(field_name, profile)
+        spec = _spec_for_canonical(canonical) if canonical else None
+        if spec is not None:
+            return spec.prompt_hint_i18n_key
+    if _is_numeric_field(field_name, str(field_info.get("type", ""))):
+        return "filter_hint_numeric"
+    return "filter_hint_text"
+
+
 async def _get_schema(url: str) -> dict:
     try:
         parser = SSParser()
@@ -142,23 +216,34 @@ async def _get_schema(url: str) -> dict:
         return {}
 
 
-def _sorted_fields(schema: dict, lang: str = "lv", profile: str | None = None) -> list[tuple[int, str, str]]:
-    """Return (index, name, label) tuples sorted by name, labels resolved via filter_display_label."""
+def _sorted_fields(schema: dict, lang: str = "lv", profile: str | None = None) -> list[tuple[int, str, str, str]]:
+    """Return (index, name, label, canonical_key) tuples in stable order.
+
+    For cars, fields come exclusively from the canonical registry (strict,
+    deduplicated, ordered) and each item carries its canonical key so the
+    keyboard can embed it in callback payloads.
+    """
     if profile == "cars":
-        items: list[tuple[int, str, str]] = []
-        for idx, spec in enumerate(sorted(_CARS_SPECS_BY_CANONICAL.values(), key=lambda s: s.order)):
+        items: list[tuple[int, str, str, str]] = []
+        idx = 0
+        for spec in sorted(_CARS_SPECS_BY_CANONICAL.values(), key=lambda s: s.order):
             field_name = next((rk for rk in spec.raw_keys if rk in schema), None)
             if field_name is None:
-                continue
-            field_info = schema[field_name]
-            if str(field_info.get("type", "")).lower() == "hidden":
-                continue
+                if spec.ss_param_mode == "path":
+                    field_name = spec.raw_keys[0]
+                else:
+                    continue
+            else:
+                field_info = schema[field_name]
+                if str(field_info.get("type", "")).lower() == "hidden":
+                    continue
             label = filter_display_label(field_name, schema, lang, profile=profile)
-            items.append((idx, field_name, label))
+            items.append((idx, field_name, label, spec.canonical_key))
+            idx += 1
         return items
 
     seen_canonical: set[str] = set()
-    raw_items: list[tuple[str, dict, str]] = []
+    raw_items: list[tuple[str, dict, str, str]] = []
     for name, info in sorted(schema.items()):
         if str(info.get("type", "")).lower() == "hidden":
             continue
@@ -167,11 +252,12 @@ def _sorted_fields(schema: dict, lang: str = "lv", profile: str | None = None) -
             continue
         seen_canonical.add(canonical)
         label = filter_display_label(name, schema, lang, profile=profile)
-        raw_items.append((name, info, label))
+        raw_items.append((name, info, label, canonical))
 
     items = []
-    for i, (name, _info, label) in enumerate(raw_items):
-        items.append((i, name, label))
+    for i, (name, _info, label, canonical) in enumerate(raw_items):
+        ck = canonical if canonical in _CARS_SPECS_BY_CANONICAL else ""
+        items.append((i, name, label, ck))
     return items
 
 
@@ -323,7 +409,7 @@ def _format_edit_prompt(
         if current_value
         else get_text("filter_current_value_missing", lang)
     )
-    hint_key = "filter_hint_numeric" if _is_numeric_field(field_name, str(field_info.get("type", ""))) else "filter_hint_text"
+    hint_key = _prompt_hint_key(field_name, field_info, profile)
     hint = get_text(hint_key, lang)
     prompt = get_text("filter_edit_prompt", lang, field=label, current=current, hint=hint)
     return sanitize_personal_ui_text(prompt, locale=lang, profile=profile)
@@ -791,7 +877,7 @@ async def cb_filter_edit_start(
         return
 
     fields = _sorted_fields(schema, lang, profile=profile)
-    field_order = [name for _, name, _label in fields]
+    field_order = [f[1] for f in fields]
     await state.update_data(
         schema=schema,
         sid=sid,
@@ -942,7 +1028,7 @@ async def cb_filter_edit_field(
             session.close()
         schema = await _get_schema(search_url)
         fields = _sorted_fields(schema, lang, profile=profile)
-        field_order = [name for _, name, _label in fields]
+        field_order = [f[1] for f in fields]
         await state.update_data(
             schema=schema,
             sid=sid,
@@ -962,6 +1048,105 @@ async def cb_filter_edit_field(
         finally:
             session.close()
 
+    # ---- Strict routing: canonical key from callback payload (cars) ----
+    canonical_key = (callback_data.ck or "").strip()
+    if profile == "cars":
+        spec = None
+        if canonical_key:
+            spec = _spec_for_canonical(canonical_key)
+            if spec is None:
+                logger.error(
+                    "filter_routing_guard: invalid canonical key=%r sid=%s profile=%s",
+                    canonical_key, sid, profile,
+                )
+                await callback.answer(get_text("filter_input_mode_error", lang), show_alert=True)
+                return
+            field_name, field_info = _resolve_field_by_canonical(schema, canonical_key)
+        else:
+            # Legacy payload (pre-refactor button): derive canonical from schema field.
+            field_name, field_info = _field_by_idx(schema, field_order, callback_data.fidx)
+            if field_name is not None:
+                canonical_key = canonical_filter_key_for_profile(field_name, profile) or ""
+                spec = _spec_for_canonical(canonical_key)
+        if field_name is None or spec is None:
+            await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
+            return
+
+        if spec.input_mode == "numeric":
+            # Hard guard: numeric keys only ever open a numeric input prompt.
+            await state.set_state(EditFilterFSM.waiting_value)
+            await state.update_data(
+                field_name=field_name,
+                field_label=filter_display_label(field_name, schema=schema, locale=lang, profile=profile),
+                field_info=field_info,
+                profile=profile,
+                sid=sid,
+                prompt_msg_id=callback.message.message_id,
+            )
+            await _safe_edit(
+                callback,
+                _format_edit_prompt(
+                    lang=lang,
+                    field_name=field_name,
+                    field_info=field_info,
+                    current_value=current_filters.get(field_name),
+                    profile=profile,
+                ),
+                reply_markup=cancel_kb(sid, lang=lang),
+            )
+            await callback.answer()
+            return
+
+        # Hard guard: select keys only ever open an options list.
+        options, unavailable_message, option_source = await _resolve_field_options(
+            field_name=field_name,
+            field_info=field_info,
+            search_url=search_url,
+            current_filters=current_filters,
+            profile=profile,
+            lang=lang,
+            schema=schema,
+        )
+        if not options:
+            logger.error(
+                "filter_input_mode_guard: canonical_key=%s input_mode=%s option_source=%s sid=%s",
+                canonical_key, spec.input_mode, option_source, sid,
+            )
+            await _safe_edit(
+                callback,
+                sanitize_personal_ui_text(
+                    unavailable_message or get_text("filter_options_unavailable", lang),
+                    locale=lang,
+                    profile=profile,
+                ),
+                reply_markup=after_filter_kb(sid, lang=lang),
+            )
+            await callback.answer()
+            return
+        await _safe_edit(
+            callback,
+            _format_edit_prompt(
+                lang=lang,
+                field_name=field_name,
+                field_info=field_info,
+                current_value=current_filters.get(field_name),
+                profile=profile,
+            ),
+            reply_markup=filter_options_kb(
+                sid, callback_data.fidx, options, page=0, lang=lang, ck=canonical_key,
+            ),
+        )
+        await state.update_data(
+            options=options,
+            option_source=option_source,
+            option_field_name=field_name,
+            option_fidx=callback_data.fidx,
+            option_ck=canonical_key,
+        )
+        await callback.answer()
+        return
+
+    # ---- Legacy flow for non-cars profiles (unchanged behavior) ----
     field_name, field_info = _field_by_idx(schema, field_order, callback_data.fidx)
     if field_name is None:
         await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
@@ -994,6 +1179,7 @@ async def cb_filter_edit_field(
             option_source=option_source,
             option_field_name=field_name,
             option_fidx=callback_data.fidx,
+            option_ck="",
         )
     else:
         if unavailable_message:
@@ -1052,6 +1238,8 @@ async def cb_filter_opt(
     profile: str | None = data.get("profile")
     field_order: list[str] = data.get("field_order", [])
     option_field_name: str | None = data.get("option_field_name")
+    search_url: str = data.get("search_url", "")
+    current_filters: dict = data.get("current_filters", {})
 
     if not schema:
         # Recover schema
@@ -1069,7 +1257,7 @@ async def cb_filter_opt(
             session.close()
         schema = await _get_schema(search_url)
         fields = _sorted_fields(schema, lang, profile=profile)
-        field_order = [name for _, name, _label in fields]
+        field_order = [f[1] for f in fields]
         await state.update_data(
             schema=schema,
             sid=sid,
@@ -1079,7 +1267,19 @@ async def cb_filter_opt(
             search_url=search_url,
         )
 
-    if option_field_name and option_field_name in schema:
+    # ---- Strict routing: canonical key from callback payload (cars) ----
+    ck = (callback_data.ck or "").strip() or str(data.get("option_ck") or "")
+    if profile == "cars" and ck:
+        spec = _spec_for_canonical(ck)
+        if spec is None or spec.input_mode != "select":
+            logger.error(
+                "filter_routing_guard: invalid option canonical key=%r sid=%s input_mode=%s",
+                ck, sid, spec.input_mode if spec else None,
+            )
+            await callback.answer(get_text("filter_input_mode_error", lang), show_alert=True)
+            return
+        field_name, field_info = _resolve_field_by_canonical(schema, ck)
+    elif option_field_name and option_field_name in schema:
         field_name = option_field_name
         field_info = schema[field_name]
     else:
@@ -1088,15 +1288,38 @@ async def cb_filter_opt(
         await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
         return
 
-    # Re-build options if not cached
+    # Re-build options if not cached, honoring strict cars option sources.
     if not options:
-        options = _prepare_options_for_ui(
-            field_name=field_name,
-            options=field_info.get("options", []),
-            profile=profile,
-            lang=lang,
-            schema=schema,
-        )
+        if profile == "cars" and ck:
+            options, unavailable_message, _src = await _resolve_field_options(
+                field_name=field_name,
+                field_info=field_info,
+                search_url=search_url,
+                current_filters=current_filters,
+                profile=profile,
+                lang=lang,
+                schema=schema,
+            )
+            if not options:
+                await _safe_edit(
+                    callback,
+                    sanitize_personal_ui_text(
+                        unavailable_message or get_text("filter_options_unavailable", lang),
+                        locale=lang,
+                        profile=profile,
+                    ),
+                    reply_markup=after_filter_kb(sid, lang=lang),
+                )
+                await callback.answer()
+                return
+        else:
+            options = _prepare_options_for_ui(
+                field_name=field_name,
+                options=field_info.get("options", []),
+                profile=profile,
+                lang=lang,
+                schema=schema,
+            )
 
     if callback_data.vidx < 0 or callback_data.vidx >= len(options):
         await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
@@ -1208,7 +1431,7 @@ async def cb_page(
             session.close()
         schema = await _get_schema(search_url)
         fields = _sorted_fields(schema, lang, profile=profile)
-        field_order = [name for _, name, _label in fields]
+        field_order = [f[1] for f in fields]
         await state.update_data(
             schema=schema,
             sid=sid,
@@ -1230,7 +1453,7 @@ async def cb_page(
 
     if callback_data.ctx == "fields":
         fields = _sorted_fields(schema, lang, profile=profile)
-        field_order = [name for _, name, _label in fields]
+        field_order = [f[1] for f in fields]
         await state.update_data(field_order=field_order)
         await _safe_edit(
             callback,
@@ -1239,7 +1462,18 @@ async def cb_page(
         )
     elif callback_data.ctx == "opts":
         fidx = callback_data.fidx
-        field_name, field_info = _field_by_idx(schema, field_order, fidx)
+        ck = (callback_data.ck or "").strip()
+        if profile == "cars" and ck:
+            spec = _spec_for_canonical(ck)
+            if spec is None or spec.input_mode != "select":
+                logger.error(
+                    "filter_routing_guard: invalid page canonical key=%r sid=%s", ck, sid,
+                )
+                await callback.answer(get_text("filter_input_mode_error", lang), show_alert=True)
+                return
+            field_name, field_info = _resolve_field_by_canonical(schema, ck)
+        else:
+            field_name, field_info = _field_by_idx(schema, field_order, fidx)
         if field_name is None:
             await callback.answer(get_text("err_search_not_found_short", lang), show_alert=True)
             return
@@ -1265,6 +1499,7 @@ async def cb_page(
             option_source=option_source,
             option_field_name=field_name,
             option_fidx=fidx,
+            option_ck=ck,
         )
         await _safe_edit(
             callback,
@@ -1275,7 +1510,7 @@ async def cb_page(
                 current_value=(data.get("current_filters") or {}).get(field_name),
                 profile=profile,
             ),
-            reply_markup=filter_options_kb(sid, fidx, options, page=pg, lang=lang),
+            reply_markup=filter_options_kb(sid, fidx, options, page=pg, lang=lang, ck=ck),
         )
 
     await callback.answer()

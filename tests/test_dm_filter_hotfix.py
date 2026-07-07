@@ -77,7 +77,7 @@ def test_filter_fields_dedup_year_min_max_once():
         "topt[18][max]": {"label": "", "type": "text", "options": []},
     }
     fields = _sorted_fields(schema, lang="ru", profile="cars")
-    labels = [label for _idx, _name, label in fields]
+    labels = [f[2] for f in fields]
     assert labels.count("Год от") == 1
     assert labels.count("Год до") == 1
 

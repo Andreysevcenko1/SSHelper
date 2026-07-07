@@ -30,10 +30,16 @@ class FilterDelCB(CallbackData, prefix="fd"):
 
 
 class FilterEditCB(CallbackData, prefix="fe"):
-    """Select a filter field to edit."""
+    """Select a filter field to edit.
+
+    ``ck`` carries the canonical filter key explicitly (strict routing for
+    profile-driven flows, e.g. cars). Empty string means legacy index-based
+    resolution via ``fidx``.
+    """
     sid: int
     fidx: int  # index in the sorted schema field list
     pg: int    # page index (for back-navigation to the same page)
+    ck: str | None = None  # canonical filter key (e.g. "price_min"); None = legacy
 
 
 class FilterOptCB(CallbackData, prefix="fo"):
@@ -42,6 +48,7 @@ class FilterOptCB(CallbackData, prefix="fo"):
     fidx: int  # field index
     vidx: int  # option index
     pg: int    # options page
+    ck: str | None = None  # canonical filter key; None = legacy
 
 
 class PageCB(CallbackData, prefix="pg"):
@@ -50,3 +57,4 @@ class PageCB(CallbackData, prefix="pg"):
     sid: int
     fidx: int  # -1 when ctx="fields"
     pg: int    # target page number
+    ck: str | None = None  # canonical filter key for ctx="opts"; None = legacy
