@@ -33,21 +33,18 @@ from app.services.filters import filter_display_label
 
 _RAW_KEY_RE = re.compile(r"(opt|topt)\[", re.IGNORECASE)
 
+# Mirrors the real SS.lv cars schema keys/values (probed live).
 _FULL_CARS_SCHEMA = {
-    "topt[17][min]": {"label": "", "type": "text", "options": []},
-    "topt[17][max]": {"label": "", "type": "text", "options": []},
     "topt[8][min]": {"label": "", "type": "text", "options": []},
     "topt[8][max]": {"label": "", "type": "text", "options": []},
     "topt[18][min]": {"label": "", "type": "text", "options": []},
     "topt[18][max]": {"label": "", "type": "text", "options": []},
-    "topt[11][min]": {"label": "", "type": "text", "options": []},
-    "topt[11][max]": {"label": "", "type": "text", "options": []},
-    "opt[4]": {"label": "", "type": "select", "options": [{"value": "2", "text": "Дизель"}]},
-    "opt[5]": {"label": "", "type": "select", "options": [{"value": "2", "text": "Автомат"}]},
-    "opt[3]": {"label": "", "type": "select", "options": [{"value": "2", "text": "Универсал"}]},
-    "opt[6]": {"label": "", "type": "select", "options": [{"value": "1", "text": "Белый"}]},
-    "opt[14]": {"label": "", "type": "select", "options": []},
-    "opt[15]": {"label": "", "type": "select", "options": []},
+    "topt[15][min]": {"label": "", "type": "text", "options": []},
+    "topt[15][max]": {"label": "", "type": "text", "options": []},
+    "opt[34]": {"label": "", "type": "select", "options": [{"value": "494", "text": "Dīzelis"}]},
+    "opt[35]": {"label": "", "type": "select", "options": [{"value": "497", "text": "Automāts"}]},
+    "opt[32]": {"label": "", "type": "select", "options": [{"value": "483", "text": "Universāls"}]},
+    "opt[17]": {"label": "", "type": "select", "options": [{"value": "6318", "text": "Balta"}]},
 }
 
 
@@ -169,11 +166,11 @@ def test_fields_kb_embeds_canonical_keys_in_callbacks():
 
 def test_resolve_field_by_canonical_maps_to_correct_raw_key():
     name, _info = _resolve_field_by_canonical(_FULL_CARS_SCHEMA, "body_type")
-    assert name == "opt[3]"
+    assert name == "opt[32]"
     name, _info = _resolve_field_by_canonical(_FULL_CARS_SCHEMA, "gearbox")
-    assert name == "opt[5]"
+    assert name == "opt[35]"
     name, _info = _resolve_field_by_canonical(_FULL_CARS_SCHEMA, "price_min")
-    assert name == "topt[17][min]"
+    assert name == "topt[8][min]"
     name, info = _resolve_field_by_canonical({}, "brand")
     assert name == "opt[14]"  # synthetic path-based field
     assert info["type"] == "select"
@@ -277,9 +274,9 @@ async def test_model_without_brand_shows_localized_notice(ru_lang):
 
 
 def test_input_mode_resolution_from_registry():
-    assert _input_mode_for("topt[17][min]", {"type": "text"}, "cars") == "numeric"
-    assert _input_mode_for("topt[11][max]", {"type": "text"}, "cars") == "numeric"
-    assert _input_mode_for("opt[3]", {"type": "select"}, "cars") == "select"
+    assert _input_mode_for("topt[8][min]", {"type": "text"}, "cars") == "numeric"
+    assert _input_mode_for("topt[15][max]", {"type": "text"}, "cars") == "numeric"
+    assert _input_mode_for("opt[32]", {"type": "select"}, "cars") == "select"
     assert _input_mode_for("opt[14]", {"type": "select"}, "cars") == "select"
 
 
@@ -381,7 +378,7 @@ def test_canonical_keys_unique_and_stable_across_pages():
 def test_prompt_examples_match_key_domain_ru():
     year_prompt = _format_edit_prompt(
         lang="ru",
-        field_name="topt[8][min]",
+        field_name="topt[18][min]",
         field_info={"label": "", "type": "text", "options": []},
         current_value=None,
         profile="cars",
@@ -391,7 +388,7 @@ def test_prompt_examples_match_key_domain_ru():
 
     volume_prompt = _format_edit_prompt(
         lang="ru",
-        field_name="topt[11][max]",
+        field_name="topt[15][max]",
         field_info={"label": "", "type": "text", "options": []},
         current_value=None,
         profile="cars",
@@ -400,7 +397,7 @@ def test_prompt_examples_match_key_domain_ru():
 
     select_prompt = _format_edit_prompt(
         lang="ru",
-        field_name="opt[5]",
+        field_name="opt[35]",
         field_info={"label": "", "type": "select", "options": []},
         current_value="1",
         profile="cars",
@@ -413,7 +410,7 @@ def test_prompt_examples_match_key_domain_ru():
 def test_prompt_examples_localized_lv_en():
     lv = _format_edit_prompt(
         lang="lv",
-        field_name="topt[8][min]",
+        field_name="topt[18][min]",
         field_info={"label": "", "type": "text", "options": []},
         current_value=None,
         profile="cars",
@@ -421,7 +418,7 @@ def test_prompt_examples_localized_lv_en():
     assert "Piemērs: 2018" in lv
     en = _format_edit_prompt(
         lang="en",
-        field_name="topt[11][min]",
+        field_name="topt[15][min]",
         field_info={"label": "", "type": "text", "options": []},
         current_value=None,
         profile="cars",
@@ -456,3 +453,40 @@ async def test_legacy_fidx_payload_still_resolves_for_cars(ru_lang):
     assert state.state == EditFilterFSM.waiting_value
     text, _ = callback.message.edits[-1]
     assert "Цена от" in text
+
+
+# ------------------------------------------------------------------ #
+# I. Model as path slug (real SS.lv structure)                        #
+# ------------------------------------------------------------------ #
+
+
+def test_model_slug_extraction_from_brand_page():
+    from app.bot.handlers.filter_cmds import _extract_model_slug_options_from_html
+    html = """
+    <a href="/lv/transport/cars/bmw/x5/">X5</a>
+    <a href="/lv/transport/cars/bmw/320/">320</a>
+    <a href="/lv/transport/cars/bmw/1-series/">1 Series</a>
+    <a href="/lv/transport/cars/bmw/search/">Search</a>
+    <a href="/msg/lv/transport/cars/bmw/x3/abcde.html">listing</a>
+    """
+    options = _extract_model_slug_options_from_html(html, "lv", "bmw")
+    values = {o["value"] for o in options}
+    assert {"x5", "320", "1-series", "x3"}.issubset(values)
+    assert "search" not in values
+
+
+def test_model_slug_url_rewrite():
+    from app.bot.handlers.filter_cmds import _rewrite_cars_model_slug_in_url
+    url = "https://www.ss.lv/lv/transport/cars/bmw/"
+    assert "/transport/cars/bmw/x5/" in _rewrite_cars_model_slug_in_url(url, "x5")
+    # No brand in path -> unchanged
+    root = "https://www.ss.lv/lv/transport/cars/"
+    assert _rewrite_cars_model_slug_in_url(root, "x5") == root
+
+
+def test_brand_rewrite_truncates_stale_model_segment():
+    from app.bot.handlers.filter_cmds import _rewrite_cars_brand_slug_in_url
+    url = "https://www.ss.lv/lv/transport/cars/bmw/x5/"
+    rewritten = _rewrite_cars_brand_slug_in_url(url, "audi")
+    assert "/transport/cars/audi/" in rewritten
+    assert "x5" not in rewritten

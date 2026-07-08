@@ -31,7 +31,7 @@ def test_cars_filters_render_human_labels_no_raw_keys():
     search = _search("https://www.ss.lv/lv/transport/cars/bmw/")
     text = _format_search_details(
         search,
-        {"topt[8][min]": "2018", "opt[4]": "2", "opt[5]": "2"},
+        {"topt[18][min]": "2018", "opt[34]": "494", "opt[35]": "497"},
         "ru",
     )
     assert "Год" in text

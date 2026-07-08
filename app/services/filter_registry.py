@@ -86,7 +86,7 @@ CARS_DM_FILTER_REGISTRY: tuple[CarFilterSpec, ...] = (
     CarFilterSpec(
         canonical_key="price_min",
         label_i18n_key="filter_lbl_price_from",
-        raw_keys=("topt[17][min]", "pr_min", "price_min", "opt[17]"),
+        raw_keys=("topt[8][min]", "pr_min", "price_min"),
         option_provider_id="price",
         input_mode=INPUT_MODE_NUMERIC,
         order=10,
@@ -95,7 +95,7 @@ CARS_DM_FILTER_REGISTRY: tuple[CarFilterSpec, ...] = (
     CarFilterSpec(
         canonical_key="price_max",
         label_i18n_key="filter_lbl_price_to",
-        raw_keys=("topt[17][max]", "pr_max", "price_max", "opt[32]"),
+        raw_keys=("topt[8][max]", "pr_max", "price_max"),
         option_provider_id="price",
         input_mode=INPUT_MODE_NUMERIC,
         order=20,
@@ -104,7 +104,7 @@ CARS_DM_FILTER_REGISTRY: tuple[CarFilterSpec, ...] = (
     CarFilterSpec(
         canonical_key="year_min",
         label_i18n_key="filter_lbl_year_from",
-        raw_keys=("topt[8][min]", "topt[18][min]"),
+        raw_keys=("topt[18][min]",),
         option_provider_id="year",
         input_mode=INPUT_MODE_NUMERIC,
         order=30,
@@ -113,7 +113,7 @@ CARS_DM_FILTER_REGISTRY: tuple[CarFilterSpec, ...] = (
     CarFilterSpec(
         canonical_key="year_max",
         label_i18n_key="filter_lbl_year_to",
-        raw_keys=("topt[8][max]", "topt[18][max]"),
+        raw_keys=("topt[18][max]",),
         option_provider_id="year",
         input_mode=INPUT_MODE_NUMERIC,
         order=40,
@@ -122,7 +122,7 @@ CARS_DM_FILTER_REGISTRY: tuple[CarFilterSpec, ...] = (
     CarFilterSpec(
         canonical_key="volume_min",
         label_i18n_key="filter_lbl_volume_from",
-        raw_keys=("topt[11][min]",),
+        raw_keys=("topt[15][min]",),
         option_provider_id="volume",
         input_mode=INPUT_MODE_NUMERIC,
         order=50,
@@ -131,7 +131,7 @@ CARS_DM_FILTER_REGISTRY: tuple[CarFilterSpec, ...] = (
     CarFilterSpec(
         canonical_key="volume_max",
         label_i18n_key="filter_lbl_volume_to",
-        raw_keys=("topt[11][max]",),
+        raw_keys=("topt[15][max]",),
         option_provider_id="volume",
         input_mode=INPUT_MODE_NUMERIC,
         order=60,
@@ -140,7 +140,7 @@ CARS_DM_FILTER_REGISTRY: tuple[CarFilterSpec, ...] = (
     CarFilterSpec(
         canonical_key="engine_type",
         label_i18n_key="filter_lbl_engine_type",
-        raw_keys=("opt[4]",),
+        raw_keys=("opt[34]",),
         option_provider_id="engine_type",
         input_mode=INPUT_MODE_SELECT,
         order=70,
@@ -148,7 +148,7 @@ CARS_DM_FILTER_REGISTRY: tuple[CarFilterSpec, ...] = (
     CarFilterSpec(
         canonical_key="gearbox",
         label_i18n_key="filter_lbl_gearbox",
-        raw_keys=("opt[5]",),
+        raw_keys=("opt[35]",),
         option_provider_id="gearbox",
         input_mode=INPUT_MODE_SELECT,
         order=80,
@@ -156,7 +156,7 @@ CARS_DM_FILTER_REGISTRY: tuple[CarFilterSpec, ...] = (
     CarFilterSpec(
         canonical_key="body_type",
         label_i18n_key="filter_lbl_body_type",
-        raw_keys=("opt[3]", "opt[35]"),
+        raw_keys=("opt[32]",),
         option_provider_id="body_type",
         input_mode=INPUT_MODE_SELECT,
         order=90,
@@ -164,7 +164,7 @@ CARS_DM_FILTER_REGISTRY: tuple[CarFilterSpec, ...] = (
     CarFilterSpec(
         canonical_key="color",
         label_i18n_key="filter_lbl_color",
-        raw_keys=("opt[6]",),
+        raw_keys=("opt[17]",),
         option_provider_id="color",
         input_mode=INPUT_MODE_SELECT,
         order=100,
@@ -181,10 +181,11 @@ CARS_DM_FILTER_REGISTRY: tuple[CarFilterSpec, ...] = (
     CarFilterSpec(
         canonical_key="model",
         label_i18n_key="filter_lbl_model",
-        raw_keys=("opt[15]", "opt[34]"),
+        raw_keys=("opt[15]",),
         option_provider_id="model",
         input_mode=INPUT_MODE_SELECT,
         order=120,
+        ss_param_mode=SS_PARAM_MODE_PATH,
     ),
 )
 
