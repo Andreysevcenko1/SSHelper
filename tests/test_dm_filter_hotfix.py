@@ -119,7 +119,7 @@ def test_extract_brand_slugs_contains_known_brands():
 
 
 def test_legacy_filters_render_correctly_for_cars_profile():
-    raw = {"pr_min": "5000", "pr_max": "9000", "opt[14]": "BMW", "opt[4]": "2"}
+    raw = {"pr_min": "5000", "pr_max": "9000", "opt[14]": "BMW", "opt[34]": "494"}
     lines = render_canonical_filters(raw, "cars", locale="ru")
     joined = " ".join(lines)
     assert "Марка" in joined and "BMW" in joined
@@ -133,11 +133,11 @@ def test_search_details_hides_query_and_keeps_localized_filters():
         id=1,
         title="transport/cars",
         is_active=True,
-        url="https://www.ss.lv/lv/transport/cars/?opt[14]=BMW&topt[17][min]=5000",
-        effective_url="https://www.ss.lv/lv/transport/cars/?opt[14]=BMW&topt[17][min]=5000",
+        url="https://www.ss.lv/lv/transport/cars/?opt[14]=BMW&topt[8][min]=5000",
+        effective_url="https://www.ss.lv/lv/transport/cars/?opt[14]=BMW&topt[8][min]=5000",
         category_profile="cars",
     )
-    text = _format_search_details(search, {"opt[14]": "BMW", "topt[17][min]": "5000"}, "ru")
+    text = _format_search_details(search, {"opt[14]": "BMW", "topt[8][min]": "5000"}, "ru")
     assert "https://www.ss.lv/lv/transport/cars/" in text
     assert "opt[" not in text and "topt[" not in text
     assert "Марка" in text and "Цена" in text
@@ -152,14 +152,14 @@ def test_ru_screen_has_no_latvian_fragments_for_known_values():
         effective_url="https://www.ss.lv/lv/transport/cars/",
         category_profile="cars",
     )
-    text = _format_search_details(search, {"opt[4]": "2", "opt[3]": "2"}, "ru")
+    text = _format_search_details(search, {"opt[34]": "494", "opt[32]": "483"}, "ru")
     assert "Дизель" in text and "Универсал" in text
     assert "Dīzelis" not in text and "Universāls" not in text
 
 
 @pytest.mark.asyncio
 async def test_model_requires_brand_first_message():
-    field_info = {"label": "", "type": "select", "options": [{"value": "1", "text": "A4"}]}
+    field_info = {"label": "", "type": "select", "options": []}
     options, message, source = await _resolve_field_options(
         field_name="opt[15]",
         field_info=field_info,
@@ -176,19 +176,13 @@ async def test_model_requires_brand_first_message():
 
 @pytest.mark.asyncio
 async def test_model_options_scoped_by_selected_brand(monkeypatch):
-    async def _fake_schema(_url: str):
-        return {
-            "opt[15]": {
-                "label": "Модель",
-                "type": "select",
-                "options": [
-                    {"value": "x5", "text": "X5"},
-                    {"value": "x3", "text": "X3"},
-                ],
-            }
-        }
+    async def _fake_models(_search_url: str, _lang: str, _brand_slug: str):
+        return [
+            {"value": "x5", "text": "X5"},
+            {"value": "x3", "text": "X3"},
+        ]
 
-    monkeypatch.setattr(filter_cmds, "_get_schema", _fake_schema)
+    monkeypatch.setattr(filter_cmds, "_fetch_model_slug_options", _fake_models)
     field_info = {"label": "", "type": "select", "options": []}
     options, message, source = await _resolve_field_options(
         field_name="opt[15]",
@@ -238,15 +232,15 @@ async def test_brand_options_use_slug_source_not_fuel(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_body_options_are_not_gearbox(monkeypatch):
-    field_info = {"label": "", "type": "select", "options": [{"value": "2", "text": "Универсал"}]}
+    field_info = {"label": "", "type": "select", "options": [{"value": "483", "text": "Universāls"}]}
     options, message, source = await _resolve_field_options(
-        field_name="opt[3]",
+        field_name="opt[32]",
         field_info=field_info,
         search_url="https://www.ss.lv/lv/transport/cars/",
         current_filters={"opt[14]": "BMW"},
         profile="cars",
         lang="ru",
-        schema={"opt[3]": field_info},
+        schema={"opt[32]": field_info},
     )
     assert message is None
     assert source == "body_type"
@@ -256,15 +250,15 @@ async def test_body_options_are_not_gearbox(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_gearbox_options_are_not_body(monkeypatch):
-    field_info = {"label": "", "type": "select", "options": [{"value": "2", "text": "Автомат"}]}
+    field_info = {"label": "", "type": "select", "options": [{"value": "497", "text": "Automāts"}]}
     options, message, source = await _resolve_field_options(
-        field_name="opt[5]",
+        field_name="opt[35]",
         field_info=field_info,
         search_url="https://www.ss.lv/lv/transport/cars/",
         current_filters={"opt[14]": "BMW"},
         profile="cars",
         lang="ru",
-        schema={"opt[5]": field_info},
+        schema={"opt[35]": field_info},
     )
     assert message is None
     assert source == "gearbox"
@@ -274,15 +268,15 @@ async def test_gearbox_options_are_not_body(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_engine_options_are_engine_domain(monkeypatch):
-    field_info = {"label": "", "type": "select", "options": [{"value": "2", "text": "Дизель"}]}
+    field_info = {"label": "", "type": "select", "options": [{"value": "494", "text": "Dīzelis"}]}
     options, message, source = await _resolve_field_options(
-        field_name="opt[4]",
+        field_name="opt[34]",
         field_info=field_info,
         search_url="https://www.ss.lv/lv/transport/cars/",
         current_filters={"opt[14]": "BMW"},
         profile="cars",
         lang="ru",
-        schema={"opt[4]": field_info},
+        schema={"opt[34]": field_info},
     )
     assert message is None
     assert source == "engine_type"

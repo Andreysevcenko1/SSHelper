@@ -33,7 +33,6 @@ from app.bot.utils import try_delete_message
 from app.db.repo import SearchRepository
 from app.i18n import get_text
 from app.services.filters import (
-    base_url_without_query,
     build_effective_url,
     canonical_filter_key_for_profile,
     filter_display_label,
@@ -148,12 +147,61 @@ def _rewrite_cars_brand_slug_in_url(url: str, brand_slug: str) -> str:
         return url
     if parts[1:3] != ["transport", "cars"]:
         return url
-    if len(parts) >= 4:
-        parts[3] = brand_slug
-    else:
-        parts.append(brand_slug)
+    # Truncate any model (or deeper) segments: brand change invalidates them.
+    parts = parts[:3] + [brand_slug]
     new_path = "/" + "/".join(parts) + "/"
     return urlunparse(parsed._replace(path=new_path))
+
+
+def _rewrite_cars_model_slug_in_url(url: str, model_slug: str) -> str:
+    """Rewrite /{lang}/transport/cars/{brand}/ into .../{brand}/{model}/."""
+    parsed = urlparse(url)
+    parts = [p for p in parsed.path.split("/") if p]
+    if len(parts) < 4 or parts[1:3] != ["transport", "cars"]:
+        return url
+    parts = parts[:4] + [model_slug]
+    new_path = "/" + "/".join(parts) + "/"
+    return urlunparse(parsed._replace(path=new_path))
+
+
+def _model_display_name(slug: str) -> str:
+    if re.fullmatch(r"[a-z]{1,2}\d+[a-z]*", slug):
+        return slug.upper()
+    return " ".join(part.capitalize() for part in slug.split("-"))
+
+
+def _extract_model_slug_options_from_html(html: str, lang: str, brand_slug: str) -> list[dict]:
+    """Parse model path slugs from a brand page (/{lang}/transport/cars/{brand}/{model}/)."""
+    pattern = re.compile(
+        r"/(?P<lang>lv|ru|en)/transport/cars/" + re.escape(brand_slug) + r"/(?P<slug>[a-z0-9][a-z0-9-]*)/",
+        re.IGNORECASE,
+    )
+    seen: set[str] = set()
+    options: list[dict] = []
+    for match in pattern.finditer(html):
+        if match.group("lang").lower() != lang:
+            continue
+        slug = match.group("slug").lower()
+        if slug in seen or slug in _NON_BRAND_SLUGS:
+            continue
+        seen.add(slug)
+        options.append({"value": slug, "text": _model_display_name(slug)})
+    return sorted(options, key=lambda o: o["text"])
+
+
+async def _fetch_model_slug_options(search_url: str, lang: str, brand_slug: str) -> list[dict]:
+    parsed = urlparse(search_url)
+    brand_root = f"{parsed.scheme or 'https'}://{parsed.netloc}/{lang}/transport/cars/{brand_slug}/"
+    timeout = aiohttp.ClientTimeout(total=20)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(brand_root, headers={"User-Agent": "Mozilla/5.0"}) as response:
+                response.raise_for_status()
+                html = await response.text()
+    except Exception as exc:
+        logger.warning("filter_cmds: failed to fetch model slugs from %s: %s", brand_root, exc)
+        return []
+    return _extract_model_slug_options_from_html(html, lang, brand_slug)
 
 
 def _is_numeric_field(name: str, field_type: str) -> bool:
@@ -296,7 +344,7 @@ def _is_mismatched_option_source(canonical_key: str, options: list[dict], locale
     }
     known_body = {
         "Седан", "Универсал", "Хэтчбек", "Купе", "Кабриолет", "Минивэн", "Внедорожник", "Пикап",
-        "Sedans", "Universāls", "Hečbeks", "Kupe", "Kabriolets", "Minivens", "SUV/Džips", "Pikaps",
+        "Sedans", "Universāls", "Hečbeks", "Kupe", "Kupeja", "Kabriolets", "Minivens", "Apvidus", "SUV/Džips", "Pikaps",
         "Sedan", "Estate", "Hatchback", "Coupe", "Convertible", "Minivan", "SUV", "Pickup",
     }
     texts = {str(opt.get("display_text") or opt.get("text") or "").strip() for opt in options}
@@ -443,22 +491,12 @@ async def _resolve_field_options(
         selected_brand = _find_selected_brand(current_filters, profile)
         if selected_brand is None:
             return [], get_text("filter_select_brand_first", lang), "missing_brand"
-        brand_key, brand_value = selected_brand
-        scoped_filters = dict(current_filters)
+        _brand_key, brand_value = selected_brand
         brand_slug = _normalize_brand_slug(brand_value)
-        scoped_filters[brand_key] = brand_slug
-        base_url = _rewrite_cars_brand_slug_in_url(base_url_without_query(search_url), brand_slug)
-        scoped_url = build_effective_url(base_url, scoped_filters)
-        scoped_schema = await _get_schema(scoped_url)
-        scoped_field = scoped_schema.get(field_name)
-        if scoped_field is not None:
-            options = [
-                o for o in scoped_field.get("options", [])
-                if str(o.get("value", "")).strip()
-            ]
-            source = "model_scoped_by_brand"
-        else:
-            return [], get_text("filter_options_unavailable", lang), "model_scoped_missing"
+        options = await _fetch_model_slug_options(search_url, _cars_lang_from_url(search_url), brand_slug)
+        source = "model_path_slug"
+        if not options:
+            return [], get_text("filter_options_unavailable", lang), "model_source_unavailable"
 
     prepared = _prepare_options_for_ui(
         field_name=field_name,
@@ -1348,6 +1386,20 @@ async def cb_filter_opt(
             selected_brand_slug = _normalize_brand_slug(value)
             value = selected_brand_slug
         repo.set_filter(search, field_name, value)
+        if canonical == "model":
+            model_slug = value.strip().lower()
+            merged_filters = filters_from_json(search.filters_json)
+            rewritten_base = _rewrite_cars_model_slug_in_url(search.base_url or search.url or "", model_slug)
+            search.base_url = rewritten_base
+            search.effective_url = build_effective_url(rewritten_base, merged_filters)
+            final_search_url = search.effective_url or ""
+            logger.debug(
+                "filter_cmds: selected_model_slug=%s final_search_url=%s",
+                model_slug,
+                final_search_url,
+            )
+            session.add(search)
+            session.commit()
         if canonical == "brand":
             merged_filters = filters_from_json(search.filters_json)
             rewritten_base = _rewrite_cars_brand_slug_in_url(search.base_url or search.url or "", selected_brand_slug)
@@ -1376,6 +1428,13 @@ async def cb_filter_opt(
             for model_key in model_raw_keys:
                 repo.delete_filter(search, model_key)
                 model_reset = True
+            if model_reset:
+                search.effective_url = build_effective_url(
+                    search.base_url or search.url or "",
+                    filters_from_json(search.filters_json),
+                )
+                session.add(search)
+                session.commit()
     finally:
         session.close()
 

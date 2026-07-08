@@ -96,13 +96,13 @@ def test_canonical_filter_key_mapping_debug_contract():
 def test_cars_profile_mapping_no_semantic_swaps():
     assert filter_display_label("opt[14]", locale="ru", profile="cars") == "Марка"
     assert filter_display_label("opt[15]", locale="ru", profile="cars") == "Модель"
-    assert filter_display_label("opt[3]", locale="ru", profile="cars") == "Тип кузова"
-    assert filter_display_label("opt[4]", locale="ru", profile="cars") == "Двигатель"
+    assert filter_display_label("opt[32]", locale="ru", profile="cars") == "Тип кузова"
+    assert filter_display_label("opt[34]", locale="ru", profile="cars") == "Двигатель"
 
 
 def test_cars_profile_value_dictionaries_bound_to_correct_fields():
-    assert filter_value_label("opt[3]", "2", locale="ru", profile="cars") == "Универсал"
-    assert filter_value_label("opt[4]", "2", locale="ru", profile="cars") == "Дизель"
+    assert filter_value_label("opt[32]", "483", locale="ru", profile="cars") == "Универсал"
+    assert filter_value_label("opt[34]", "494", locale="ru", profile="cars") == "Дизель"
     assert filter_value_label("opt[14]", "BMW", locale="ru", profile="cars") == "BMW"
     assert filter_value_label("opt[15]", "2", locale="ru", profile="cars") == "2"
 

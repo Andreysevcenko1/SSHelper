@@ -5,18 +5,15 @@ for car searches on SS.lv.
 
 SS.lv transport/cars filter keys observed in the wild:
 
-  opt[14]            – make/brand (Марка / Marka / Brand)
-  opt[15]            – model (Модель / Modelis / Model)
-  opt[17]            – price from
-  opt[32]            – price to
-  topt[17][min/max]  – price range form
-  topt[8][min/max]   – year (Год / Gads / Year)
-  topt[10][min/max]  – mileage km (Пробег / Nobraukums / Mileage)
-  topt[11][min/max]  – engine volume cm³ (Объём / Tilpums / Engine vol)
-  opt[4]             – fuel type (Топливо / Degviela / Fuel)
-  opt[5]             – gearbox (КПП / Ātrumkārba / Gearbox)
-  opt[3]             – body type (Кузов / Virsbūve / Body)
-  opt[6]             – color (Цвет / Krāsa / Color)
+  path slug          – make/brand (/transport/cars/{brand}/)
+  path slug          – model (/transport/cars/{brand}/{model}/)
+  topt[8][min/max]   – price € (Цена / Cena / Price)
+  topt[18][min/max]  – year (Год / Gads / Year)
+  topt[15][min/max]  – engine volume, litres (Объём / Tilpums / Engine vol)
+  opt[34]            – engine/fuel type (Двигатель / Dzinējs / Engine)
+  opt[35]            – gearbox (КПП / Ātrumkārba / Gearbox)
+  opt[32]            – body type (Кузов / Virsbūve / Body)
+  opt[17]            – color (Цвет / Krāsa / Color)
   pr_min / pr_max    – price range alternative
 """
 
@@ -53,31 +50,50 @@ LABELS: dict[str, dict[str, str]] = {
 # ---------------------------------------------------------------------------
 
 OPTION_VALUES: dict[str, dict[str, dict[str, str]]] = {
+    # Keys are real SS.lv option values (opt[34]).
     "engine_type": {
-        "1": {"lv": "Benzīns", "ru": "Бензин", "en": "Petrol"},
-        "2": {"lv": "Dīzelis", "ru": "Дизель", "en": "Diesel"},
-        "3": {"lv": "Gāze", "ru": "Газ", "en": "Gas"},
-        "4": {"lv": "Hibrīds", "ru": "Гибрид", "en": "Hybrid"},
-        "6": {"lv": "Elektriskais", "ru": "Электро", "en": "Electric"},
+        "493": {"lv": "Benzīns", "ru": "Бензин", "en": "Petrol"},
+        "495": {"lv": "Benzīns/gāze", "ru": "Бензин/газ", "en": "Petrol/gas"},
+        "494": {"lv": "Dīzelis", "ru": "Дизель", "en": "Diesel"},
+        "7434": {"lv": "Hibrīds", "ru": "Гибрид", "en": "Hybrid"},
+        "114330": {"lv": "Elektriskais", "ru": "Электро", "en": "Electric"},
     },
+    # opt[35]
     "gearbox": {
-        "1": {"lv": "Manuāla", "ru": "Механика", "en": "Manual"},
-        "2": {"lv": "Automāts", "ru": "Автомат", "en": "Automatic"},
-        "3": {"lv": "Robota", "ru": "Робот", "en": "Robot"},
-        "4": {"lv": "Variators", "ru": "Вариатор", "en": "CVT"},
+        "496": {"lv": "Manuāla", "ru": "Механика", "en": "Manual"},
+        "497": {"lv": "Automāts", "ru": "Автомат", "en": "Automatic"},
     },
+    # opt[32]
     "body_type": {
-        "1":  {"lv": "Sedans", "ru": "Седан", "en": "Sedan"},
-        "2":  {"lv": "Universāls", "ru": "Универсал", "en": "Estate"},
-        "3":  {"lv": "Hečbeks", "ru": "Хэтчбек", "en": "Hatchback"},
-        "4":  {"lv": "Kupe", "ru": "Купе", "en": "Coupe"},
-        "5":  {"lv": "Kabriolets", "ru": "Кабриолет", "en": "Convertible"},
-        "6":  {"lv": "Minivens", "ru": "Минивэн", "en": "Minivan"},
-        "7":  {"lv": "SUV/Džips", "ru": "Внедорожник", "en": "SUV"},
-        "8":  {"lv": "Pikaps", "ru": "Пикап", "en": "Pickup"},
-        "9":  {"lv": "Mikroautobuss", "ru": "Микроавтобус", "en": "Microbus"},
+        "484": {"lv": "Sedans", "ru": "Седан", "en": "Sedan"},
+        "483": {"lv": "Universāls", "ru": "Универсал", "en": "Estate"},
+        "486": {"lv": "Hečbeks", "ru": "Хэтчбек", "en": "Hatchback"},
+        "487": {"lv": "Kupeja", "ru": "Купе", "en": "Coupe"},
+        "488": {"lv": "Kabriolets", "ru": "Кабриолет", "en": "Convertible"},
+        "476": {"lv": "Minivens", "ru": "Минивэн", "en": "Minivan"},
+        "477": {"lv": "Apvidus", "ru": "Внедорожник", "en": "SUV"},
+        "114301": {"lv": "Pikaps", "ru": "Пикап", "en": "Pickup"},
+        "114384": {"lv": "Mikroautobuss", "ru": "Микроавтобус", "en": "Microbus"},
+        "24775": {"lv": "Cits", "ru": "Другой", "en": "Other"},
     },
-    # Popular brands used in DM UX (fallback to raw value if unknown).
+    # opt[17]
+    "color": {
+        "6318": {"lv": "Balta", "ru": "Белый", "en": "White"},
+        "6319": {"lv": "Brūna", "ru": "Коричневый", "en": "Brown"},
+        "6311": {"lv": "Dzeltena", "ru": "Жёлтый", "en": "Yellow"},
+        "6313": {"lv": "Gaiši zila", "ru": "Голубой", "en": "Light blue"},
+        "153": {"lv": "Melna", "ru": "Чёрный", "en": "Black"},
+        "6310": {"lv": "Oranža", "ru": "Оранжевый", "en": "Orange"},
+        "6317": {"lv": "Pelēka", "ru": "Серый", "en": "Grey"},
+        "6308": {"lv": "Sarkana", "ru": "Красный", "en": "Red"},
+        "6316": {"lv": "Sudraba", "ru": "Серебристый", "en": "Silver"},
+        "6309": {"lv": "Tumši sarkana", "ru": "Тёмно-красный", "en": "Dark red"},
+        "6315": {"lv": "Violeta", "ru": "Фиолетовый", "en": "Purple"},
+        "6312": {"lv": "Zaļa", "ru": "Зелёный", "en": "Green"},
+        "6314": {"lv": "Zila", "ru": "Синий", "en": "Blue"},
+        "137": {"lv": "Cita", "ru": "Другой", "en": "Other"},
+    },
+# Popular brands used in DM UX (fallback to raw value if unknown).
     "brand": {
         "BMW": {"lv": "BMW", "ru": "BMW", "en": "BMW"},
         "Mercedes": {"lv": "Mercedes", "ru": "Mercedes", "en": "Mercedes"},
@@ -101,8 +117,8 @@ DISPLAY_ORDER: list[str] = [
 # ---------------------------------------------------------------------------
 
 UNITS: dict[str, str] = {
-    "volume_min": "см³",
-    "volume_max": "см³",
+    "volume_min": "л",
+    "volume_max": "л",
 }
 
 # Cars DM UX has strict canonical set; unknown canonical keys are not rendered.
