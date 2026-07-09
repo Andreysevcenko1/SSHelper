@@ -65,6 +65,99 @@ _T: dict[str, dict[str, str]] = {
         "ru": "ℹ️ Помощь",
         "en": "ℹ️ Help",
     },
+    # ------------------------------------------------------------------ #
+    # Subscription / paid plans                                            #
+    # ------------------------------------------------------------------ #
+    "btn_subscription": {
+        "lv": "⭐ Abonements",
+        "ru": "⭐ Подписка",
+        "en": "⭐ Subscription",
+    },
+    "sub_screen_title": {
+        "lv": "⭐ <b>Abonements</b>",
+        "ru": "⭐ <b>Подписка</b>",
+        "en": "⭐ <b>Subscription</b>",
+    },
+    "sub_status_free": {
+        "lv": "Jums ir bezmaksas plāns: 1 aktīvs meklējums.",
+        "ru": "У вас бесплатный план: 1 активный поиск.",
+        "en": "You are on the free plan: 1 active search.",
+    },
+    "sub_status_active": {
+        "lv": "Aktīvais plāns: {plan}\nAtlikušas dienas: {days}",
+        "ru": "Активный тариф: {plan}\nОсталось дней: {days}",
+        "en": "Active plan: {plan}\nDays left: {days}",
+    },
+    "sub_usage": {
+        "lv": "Izmantoti meklējumi: {active} no {limit}",
+        "ru": "Используется поисков: {active} из {limit}",
+        "en": "Searches in use: {active} of {limit}",
+    },
+    "sub_pick_plan": {
+        "lv": "Izvēlieties tarifu (uz 30 dienām, jauns tarifs aizstāj esošo):",
+        "ru": "Выберите тариф (на 30 дней, новый тариф заменяет текущий):",
+        "en": "Choose a plan (30 days; a new plan replaces the current one):",
+    },
+    "sub_plan_plus1": {
+        "lv": "+1 meklējums — {eur} (⭐{stars})",
+        "ru": "+1 поиск — {eur} (⭐{stars})",
+        "en": "+1 search — {eur} (⭐{stars})",
+    },
+    "sub_plan_plus4": {
+        "lv": "+4 meklējumi — {eur} (⭐{stars})",
+        "ru": "+4 поиска — {eur} (⭐{stars})",
+        "en": "+4 searches — {eur} (⭐{stars})",
+    },
+    "sub_plan_plus9": {
+        "lv": "+9 meklējumi — {eur} (⭐{stars})",
+        "ru": "+9 поисков — {eur} (⭐{stars})",
+        "en": "+9 searches — {eur} (⭐{stars})",
+    },
+    "sub_invoice_title": {
+        "lv": "Abonements: {total} aktīvi meklējumi",
+        "ru": "Подписка: {total} активных поисков",
+        "en": "Subscription: {total} active searches",
+    },
+    "sub_invoice_desc": {
+        "lv": "+{extra} papildu meklējumi (kopā {total}) uz {days} dienām. Cena: {eur}.",
+        "ru": "+{extra} доп. поисков (всего {total}) на {days} дней. Цена: {eur}.",
+        "en": "+{extra} extra searches ({total} total) for {days} days. Price: {eur}.",
+    },
+    "sub_paid_ok": {
+        "lv": "✅ Apmaksa saņemta! Tagad jums pieejami {total} aktīvi meklējumi uz {days} dienām.",
+        "ru": "✅ Оплата получена! Теперь вам доступно {total} активных поисков на {days} дней.",
+        "en": "✅ Payment received! You now have {total} active searches for {days} days.",
+    },
+    "err_search_limit": {
+        "lv": "🚫 Sasniegts aktīvo meklējumu limits: {limit}.\nIegādājieties tarifu, lai pievienotu vairāk, vai apturiet kādu no esošajiem meklējumiem.",
+        "ru": "🚫 Достигнут лимит активных поисков: {limit}.\nКупите тариф, чтобы добавить больше, или приостановите один из текущих поисков.",
+        "en": "🚫 Active search limit reached: {limit}.\nBuy a plan to add more, or pause one of your current searches.",
+    },
+    "btn_buy_more_searches": {
+        "lv": "⭐ Palielināt limitu",
+        "ru": "⭐ Увеличить лимит",
+        "en": "⭐ Increase limit",
+    },
+    "brand_from_url_applied": {
+        "lv": "ℹ️ Marka no saites automātiski pievienota filtriem: <b>{brand}</b>",
+        "ru": "ℹ️ Марка из ссылки автоматически добавлена в фильтры: <b>{brand}</b>",
+        "en": "ℹ️ Brand from the link was added to filters automatically: <b>{brand}</b>",
+    },
+    "brand_conflict_question": {
+        "lv": "Saitē norādīta marka <b>{url_brand}</b>, bet filtros izvēlēta <b>{filter_brand}</b>.\nAizstāt ar marku no saites? (Modelis tiks atiestatīts.)",
+        "ru": "В ссылке указана марка <b>{url_brand}</b>, а в фильтрах выбрана <b>{filter_brand}</b>.\nЗаменить на марку из ссылки? (Модель будет сброшена.)",
+        "en": "The link specifies brand <b>{url_brand}</b>, but filters have <b>{filter_brand}</b>.\nReplace with the brand from the link? (Model will be reset.)",
+    },
+    "btn_replace_brand": {
+        "lv": "✅ Jā, aizstāt",
+        "ru": "✅ Да, заменить",
+        "en": "✅ Yes, replace",
+    },
+    "btn_keep_brand": {
+        "lv": "❌ Nē, atstāt",
+        "ru": "❌ Нет, оставить",
+        "en": "❌ No, keep",
+    },
     "btn_back_to_menu": {
         "lv": "🏠 Uz izvēlni",
         "ru": "🏠 В меню",

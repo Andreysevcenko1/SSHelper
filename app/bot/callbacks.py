@@ -58,3 +58,14 @@ class PageCB(CallbackData, prefix="pg"):
     fidx: int  # -1 when ctx="fields"
     pg: int    # target page number
     ck: str | None = None  # canonical filter key for ctx="opts"; None = legacy
+
+
+class SubCB(CallbackData, prefix="sub"):
+    """Subscription screen / plan purchase."""
+    action: str  # show | buy
+    plan: str | None = None  # plus1 | plus4 | plus9
+
+
+class BrandFixCB(CallbackData, prefix="bf"):
+    """Resolve brand conflict between URL path and query filters on add."""
+    choice: str  # "url" (use link brand) | "keep" (keep filter brand)

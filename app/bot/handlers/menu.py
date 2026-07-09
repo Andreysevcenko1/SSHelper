@@ -278,6 +278,13 @@ async def cb_search_resume(
         if search.is_active:
             await callback.answer(get_text("err_already_active", lang), show_alert=True)
             return
+        from app.db.repo import SubscriptionRepository
+        limit = SubscriptionRepository(session).active_search_limit(user_id)
+        if repo.count_active_for_user(user_id) >= limit:
+            await callback.answer(
+                get_text("err_search_limit", lang, limit=limit), show_alert=True
+            )
+            return
         repo.resume_search(search)
         sid = search.id
     finally:
