@@ -594,9 +594,9 @@ _T: dict[str, dict[str, str]] = {
         "en": "▶️ Search is already active.",
     },
     "err_invalid_url": {
-        "lv": "❌ URL jābūt no ss.lv domēna",
-        "ru": "❌ URL должен быть с домена ss.lv",
-        "en": "❌ URL must be from the ss.lv domain",
+        "lv": "❌ URL jābūt no ss.lv vai ss.com domēna",
+        "ru": "❌ URL должен быть с домена ss.lv или ss.com",
+        "en": "❌ URL must be from the ss.lv or ss.com domain",
     },
     "err_duplicate_url": {
         "lv": "⚠️ Meklējums ar šo URL jau eksistē (#{sid})",

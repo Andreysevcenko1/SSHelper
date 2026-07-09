@@ -111,44 +111,34 @@ def test_filters_from_json_invalid():
 
 
 # ------------------------------------------------------------------ #
-# URL validation (inline replication of the add_search logic)         #
+# URL validation                                                       #
 # ------------------------------------------------------------------ #
 
 
-from urllib.parse import urlparse
-
-
-def _validate_ss_url(url: str) -> str | None:
-    url = url.strip()
-    if not url:
-        return "URL не может быть пустым."
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"}:
-        return "URL должен начинаться с http:// или https://"
-    if not parsed.netloc or "ss.lv" not in parsed.netloc:
-        return "URL должен быть с домена ss.lv"
-    return None
+from app.bot.handlers.add_search import _validate_ss_url
 
 
 @pytest.mark.parametrize("url", [
     "https://www.ss.lv/lv/transport/cars/",
     "http://ss.lv/lv/real-estate/flats/riga/",
     "https://ss.lv/lv/transport/cars/?pr_min=5000",
+    "https://www.ss.com/lv/transport/cars/",
+    "https://ss.com/ru/real-estate/flats/riga/centre/",
 ])
 def test_valid_ss_urls(url):
     assert _validate_ss_url(url) is None
 
 
-@pytest.mark.parametrize("url,expected_fragment", [
-    ("", "пустым"),
-    ("ftp://ss.lv/foo", "http"),
-    ("https://example.com/path", "ss.lv"),
-    ("not-a-url", "http"),
+@pytest.mark.parametrize("url,expected_code", [
+    ("", "empty"),
+    ("ftp://ss.lv/foo", "bad_scheme"),
+    ("https://example.com/path", "bad_domain"),
+    ("https://evil-ss.lv.example.com/", "bad_domain"),
+    ("https://notss.lv/", "bad_domain"),
+    ("not-a-url", "bad_scheme"),
 ])
-def test_invalid_ss_urls(url, expected_fragment):
-    error = _validate_ss_url(url)
-    assert error is not None
-    assert expected_fragment in error
+def test_invalid_ss_urls(url, expected_code):
+    assert _validate_ss_url(url) == expected_code
 
 
 # ------------------------------------------------------------------ #

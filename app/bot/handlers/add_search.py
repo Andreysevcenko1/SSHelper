@@ -42,7 +42,8 @@ def _validate_ss_url(url: str) -> str | None:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
         return "bad_scheme"
-    if not parsed.netloc or "ss.lv" not in parsed.netloc:
+    host = (parsed.hostname or "").lower()
+    if host not in {"ss.lv", "www.ss.lv", "ss.com", "www.ss.com"}:
         return "bad_domain"
     return None
 
