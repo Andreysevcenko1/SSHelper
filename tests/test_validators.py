@@ -197,3 +197,22 @@ def test_flats_deal_rewrite_replaces_existing():
 def test_flats_deal_rewrite_ignores_non_flats():
     url = "https://www.ss.lv/lv/transport/cars/bmw/"
     assert _rewrite_flats_deal_in_url(url, "sell") == url
+
+
+from app.bot.handlers.add_search import _normalize_ss_url
+
+
+@pytest.mark.parametrize("url", [
+    "https://m.ss.com/lv/transport/cars/",
+    "https://m.ss.lv/lv/real-estate/flats/riga/",
+])
+def test_mobile_ss_urls_valid(url):
+    assert _validate_ss_url(url) is None
+
+
+def test_mobile_url_normalized_to_www():
+    assert _normalize_ss_url("https://m.ss.com/lv/transport/cars/") == \
+        "https://www.ss.com/lv/transport/cars/"
+    assert _normalize_ss_url("https://m.ss.lv/lv/real-estate/flats/") == \
+        "https://www.ss.lv/lv/real-estate/flats/"
+    assert _normalize_ss_url("https://www.ss.lv/lv/x/") == "https://www.ss.lv/lv/x/"
