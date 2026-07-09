@@ -20,9 +20,9 @@ class Plan:
 
 
 PLANS: dict[str, Plan] = {
-    "plus1": Plan("plus1", 1, 2, "1,99 €", 100, "sub_plan_plus1"),
-    "plus4": Plan("plus4", 4, 5, "4,99 €", 250, "sub_plan_plus4"),
-    "plus9": Plan("plus9", 9, 10, "8,99 €", 450, "sub_plan_plus9"),
+    "plus1": Plan("plus1", 1, 2, "1,99 €", 150, "sub_plan_plus1"),
+    "plus4": Plan("plus4", 4, 5, "4,99 €", 380, "sub_plan_plus4"),
+    "plus9": Plan("plus9", 9, 10, "8,99 €", 680, "sub_plan_plus9"),
 }
 
 PLAN_DURATION_DAYS = 30

@@ -320,11 +320,11 @@ async def _process_add_url(
         await _reply(message, get_text("err_no_user", lang), edit_msg_id=edit_msg_id, lang=lang)
         return
 
-    # Check duplicate
+    # Check duplicate: same link is allowed as long as the filters differ
     session = session_factory()
     try:
         repo = SearchRepository(session)
-        existing = repo.find_by_base_url(user_id, b_url)
+        existing = repo.find_duplicate(user_id, b_url, filters_json_str)
         if existing:
             text = get_text("err_duplicate_url", lang, sid=existing.id)
             from app.bot.keyboards.searches import error_kb
