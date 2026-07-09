@@ -70,7 +70,12 @@ async def run() -> None:
     dp.include_router(get_main_router())
 
     parser = SSParser()
-    watcher = WatcherService(session_factory=session_factory, parser=parser, bot=bot, config=config)
+    from app.services.fetch_coordinator import FetchCoordinator
+    coordinator = FetchCoordinator(parser)
+    watcher = WatcherService(
+        session_factory=session_factory, parser=parser, bot=bot, config=config,
+        coordinator=coordinator,
+    )
 
     # Group watcher — independent pipeline, only runs when broadcast is configured
     group_watcher: GroupWatcherService | None = None
@@ -80,6 +85,7 @@ async def run() -> None:
             parser=parser,
             bot=bot,
             config=config,
+            coordinator=coordinator,
         )
         session = session_factory()
         try:
