@@ -175,4 +175,11 @@ def listing_matches_filters(
         if verdict is False:
             return False, f"{key} (listing={listing_text!r})"
 
+    # Deal type (flats): URL path already constrains it; double-check locally.
+    deal_filter = str(canonical.get("deal_type") or "")
+    expected_deal = {"sell": "sell", "hand_over": "rent"}.get(deal_filter)
+    listing_deal = getattr(listing, "deal_type", "unknown")
+    if expected_deal and listing_deal not in ("unknown", None) and listing_deal != expected_deal:
+        return False, f"deal_type (listing={listing_deal!r})"
+
     return True, None

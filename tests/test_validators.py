@@ -174,3 +174,26 @@ def test_field_by_idx():
     none_name, none_info = _field_by_idx(schema, field_order, 99)
     assert none_name is None
     assert none_info is None
+
+
+# ------------------------------------------------------------------ #
+# Flats deal-type URL rewrite                                          #
+# ------------------------------------------------------------------ #
+
+
+from app.bot.handlers.filter_cmds import _rewrite_flats_deal_in_url
+
+
+def test_flats_deal_rewrite_appends_segment():
+    url = "https://www.ss.lv/lv/real-estate/flats/riga/centre/"
+    assert _rewrite_flats_deal_in_url(url, "sell").endswith("/riga/centre/sell/")
+
+
+def test_flats_deal_rewrite_replaces_existing():
+    url = "https://www.ss.lv/lv/real-estate/flats/riga/centre/hand_over/"
+    assert _rewrite_flats_deal_in_url(url, "sell").endswith("/riga/centre/sell/")
+
+
+def test_flats_deal_rewrite_ignores_non_flats():
+    url = "https://www.ss.lv/lv/transport/cars/bmw/"
+    assert _rewrite_flats_deal_in_url(url, "sell") == url
