@@ -351,9 +351,9 @@ def test_canonical_keys_unique_and_stable_across_pages():
     cks = [f[3] for f in fields]
     assert len(cks) == len(set(cks)), f"duplicate canonical keys: {cks}"
     assert cks == [
-        "price_min", "price_max", "year_min", "year_max",
+        "brand", "model", "price_min", "price_max", "year_min", "year_max",
         "volume_min", "volume_max", "engine_type", "gearbox",
-        "body_type", "color", "brand", "model",
+        "body_type", "color",
     ]
     # Same input -> same order (stability)
     assert _sorted_fields(_FULL_CARS_SCHEMA, lang="ru", profile="cars") == fields

@@ -85,6 +85,8 @@ def test_filter_fields_dedup_year_min_max_once():
 def test_cars_dm_registry_has_exact_semantic_order():
     specs = sorted(cars_registry_by_canonical_key().values(), key=lambda s: s.order)
     assert [s.canonical_key for s in specs] == [
+        "brand",
+        "model",
         "price_min",
         "price_max",
         "year_min",
@@ -95,8 +97,6 @@ def test_cars_dm_registry_has_exact_semantic_order():
         "gearbox",
         "body_type",
         "color",
-        "brand",
-        "model",
     ]
 
 

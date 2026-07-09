@@ -49,7 +49,7 @@ def test_main_menu_kb_has_correct_texts():
     texts = {b.text for row in kb.inline_keyboard for b in row}
     assert "📋 Мои поиски" in texts
     assert "➕ Добавить поиск" in texts
-    assert "🌐 Valoda / Language" in texts
+    assert "🌐 Язык / Valoda" in texts
 
 
 def test_lang_selection_kb():

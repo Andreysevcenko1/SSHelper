@@ -9,6 +9,9 @@ from app.config import Config
 from app.db.repo import BroadcastRepository, SearchRepository, UserSettingsRepository
 from app.i18n import get_text, resolve_lang
 from app.services.formatter import format_listing_message
+from app.services.filters import filters_from_json
+from app.services.listing_filter import listing_matches_filters
+from app.filters.profiles import detect_profile
 from app.services.notifier import send_listing_notification
 from app.services.ss_parser import Listing, SSParser
 
@@ -176,23 +179,34 @@ class WatcherService:
         # Send notifications for new listings (newest first, up to 5)
         for raw_listing in new_listings[:5]:
             listing = await self.parser.fetch_and_enrich_listing(raw_listing)
-            try:
-                await self._send_notification(
-                    chat_id=search.user_id,
-                    search_id=search.id,
-                    listing=listing,
-                    lang=lang,
+            matches, fail_reason = listing_matches_filters(
+                listing,
+                filters_from_json(search.filters_json),
+                search.category_profile or detect_profile(search.effective_url or search.url or ""),
+            )
+            if not matches:
+                logger.info(
+                    "Watcher: search #%d — listing %s filtered out locally: %s",
+                    search.id, listing.external_id, fail_reason,
                 )
-            except (TelegramBadRequest, TelegramForbiddenError) as exc:
-                logger.warning(
-                    "Watcher: failed to send notification for search #%d listing %s — %s",
-                    search.id, listing.external_id, exc,
-                )
-            except Exception:
-                logger.exception(
-                    "Watcher: unexpected error sending notification for search #%d",
-                    search.id,
-                )
+            if matches:
+                try:
+                    await self._send_notification(
+                        chat_id=search.user_id,
+                        search_id=search.id,
+                        listing=listing,
+                        lang=lang,
+                    )
+                except (TelegramBadRequest, TelegramForbiddenError) as exc:
+                    logger.warning(
+                        "Watcher: failed to send notification for search #%d listing %s — %s",
+                        search.id, listing.external_id, exc,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Watcher: unexpected error sending notification for search #%d",
+                        search.id,
+                    )
 
             # Group broadcast (feature-flagged, deduped per external_id)
             if self.config and self.config.broadcast_enabled:

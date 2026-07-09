@@ -291,7 +291,7 @@ class TestRenderCars:
         assert "999" not in joined
         _assert_no_raw_keys(lines)
 
-    def test_display_order_price_before_brand(self):
+    def test_display_order_brand_before_price(self):
         raw = {
             "pr_min": "10000",
             "opt[14]": "BMW",
@@ -300,7 +300,7 @@ class TestRenderCars:
         joined = " | ".join(lines)
         make_pos = joined.find("Марка")
         price_pos = joined.find("Цена")
-        assert price_pos < make_pos, "Price should appear before brand"
+        assert make_pos < price_pos, "Brand should appear before price"
 
     def test_label_lv(self):
         raw = {"opt[34]": "493"}
