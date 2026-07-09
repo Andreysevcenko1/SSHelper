@@ -7,6 +7,7 @@ from app.bot.handlers.filter_cmds import router as filter_cmds_router
 from app.bot.handlers.group_admin import router as group_admin_router
 from app.bot.handlers.lang import router as lang_router
 from app.bot.handlers.menu import router as menu_router
+from app.bot.handlers.subscription import router as subscription_router
 
 
 def get_main_router() -> Router:
@@ -18,6 +19,7 @@ def get_main_router() -> Router:
     router.include_router(searches_router)
     router.include_router(filter_cmds_router)
     router.include_router(group_admin_router)
+    router.include_router(subscription_router)
     # Callback handlers
     router.include_router(menu_router)
     return router

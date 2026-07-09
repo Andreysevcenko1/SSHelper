@@ -5,7 +5,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import BroadcastSent, GroupSearch, Search, UserSettings
+from app.db.models import BroadcastSent, GroupSearch, Search, Subscription, UserSettings
 from app.services.filters import (
     build_effective_url,
     filters_from_json,
@@ -69,6 +69,10 @@ class SearchRepository:
     def get_user_searches(self, user_id: int) -> list[Search]:
         stmt = select(Search).where(Search.user_id == user_id).order_by(Search.id)
         return list(self.session.scalars(stmt).all())
+
+    def count_active_for_user(self, user_id: int) -> int:
+        stmt = select(Search).where(Search.user_id == user_id, Search.is_active.is_(True))
+        return len(list(self.session.scalars(stmt).all()))
 
     def get_by_id(self, search_id: int) -> Search | None:
         return self.session.get(Search, search_id)
@@ -262,3 +266,41 @@ class BroadcastRepository:
     def already_sent(self, external_id: str) -> bool:
         """Return True if *external_id* is already in broadcast_sent."""
         return self.session.get(BroadcastSent, external_id) is not None
+
+
+class SubscriptionRepository:
+    """Paid extra-search-slot plans (one row per user, replace-on-purchase)."""
+
+    FREE_LIMIT = 1
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get_active(self, user_id: int) -> Subscription | None:
+        sub = self.session.get(Subscription, user_id)
+        if sub is None:
+            return None
+        if sub.expires_at <= datetime.utcnow():
+            return None
+        return sub
+
+    def set_plan(self, user_id: int, plan: str, extra_searches: int, days: int = 30) -> Subscription:
+        """Set/replace the user's plan (old plan is discarded, no stacking)."""
+        now = datetime.utcnow()
+        sub = self.session.get(Subscription, user_id)
+        if sub is None:
+            sub = Subscription(user_id=user_id, plan=plan, extra_searches=extra_searches,
+                               purchased_at=now, expires_at=now + timedelta(days=days))
+            self.session.add(sub)
+        else:
+            sub.plan = plan
+            sub.extra_searches = extra_searches
+            sub.purchased_at = now
+            sub.expires_at = now + timedelta(days=days)
+        self.session.commit()
+        self.session.refresh(sub)
+        return sub
+
+    def active_search_limit(self, user_id: int) -> int:
+        sub = self.get_active(user_id)
+        return self.FREE_LIMIT + (sub.extra_searches if sub else 0)

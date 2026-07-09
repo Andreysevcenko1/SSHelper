@@ -50,6 +50,21 @@ class GroupSearch(Base):
     category_profile: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
+class Subscription(Base):
+    """Paid plan giving a user extra active-search slots for 30 days.
+
+    One row per user; a new purchase replaces the current plan entirely.
+    """
+
+    __tablename__ = "subscriptions"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    plan: Mapped[str] = mapped_column(String(16), nullable=False)
+    extra_searches: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    purchased_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
 class BroadcastSent(Base):
     """Tracks which listing external_ids have already been broadcast to the group.
 
