@@ -170,9 +170,9 @@ def test_plan_i18n_texts():
 
 
 def test_plan_star_prices():
-    assert PLANS["plus1"].price_stars == 150
-    assert PLANS["plus4"].price_stars == 380
-    assert PLANS["plus9"].price_stars == 680
+    assert PLANS["plus1"].price_stars == 100
+    assert PLANS["plus4"].price_stars == 250
+    assert PLANS["plus9"].price_stars == 500
 
 
 def test_find_duplicate_same_url_different_filters(session):
