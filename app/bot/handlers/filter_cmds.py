@@ -41,6 +41,7 @@ from app.services.filters import (
     sanitize_personal_ui_text,
 )
 from app.services.filter_registry import cars_registry_by_canonical_key
+from app.filters.profiles import get_profile
 from app.services.ss_parser import SSParser
 from app.filters.renderer import render_canonical_filters
 
@@ -292,8 +293,25 @@ def _sorted_fields(schema: dict, lang: str = "lv", profile: str | None = None) -
 
     seen_canonical: set[str] = set()
     raw_items: list[tuple[str, dict, str, str]] = []
-    for name, info in sorted(schema.items()):
+    profile_mod = get_profile(profile)
+    display_order: list[str] = list(getattr(profile_mod, "DISPLAY_ORDER", []) or [])
+
+    def _order_key(item: tuple[str, dict]) -> tuple[int, str]:
+        name = item[0]
+        canonical = canonical_filter_key_for_profile(name, profile) or ""
+        try:
+            pos = display_order.index(canonical)
+        except ValueError:
+            pos = len(display_order)
+        return (pos, name)
+
+    for name, info in sorted(schema.items(), key=_order_key):
         if str(info.get("type", "")).lower() == "hidden":
+            continue
+        # SS.lv "sid" (deal type) is a URL path segment, not a query filter:
+        # it is already fixed by the saved search URL, so no button for it.
+        # "mid[]" is a technical district-checkbox array — not usable as a button.
+        if name == "sid" or name.startswith("mid["):
             continue
         canonical = canonical_filter_key_for_profile(name, profile) or name.lower()
         if canonical in seen_canonical:

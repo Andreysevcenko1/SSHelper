@@ -3,20 +3,19 @@
 Defines the canonical field mapping, value normalisation and display order
 for apartment/flat searches on SS.lv.
 
-SS.lv real-estate filter keys observed in the wild
-(confirmed from ss.lv/lv/real-estate/flats/…?topt[…][min]=…):
+Real SS.lv flats filter schema (probed live at
+https://www.ss.lv/lv/real-estate/flats/riga/centre/):
 
-  topt[18][min/max]  – rooms (Комнаты / Istabas / Rooms)
-  topt[15][min/max]  – area m² (Площадь / Platība / Area)
-  topt[26][min/max]  – floor (Этаж / Stāvs / Floor)
-  topt[27][min/max]  – total floors (Этажей в доме / Stāvi / Floors total)
-  opt[17]            – price from (Цена от / Cena no / Price from)
-  opt[32]            – price to  (Цена до / Cena līdz / Price to)
-  topt[17][min/max]  – price range variant
-  opt[1]             – deal type (sell / rent)
-  opt[6]             – house type (кирпичный, панельный …)
-  pr_min / pr_max    – price range (alternative form)
-  mid[…]             – district
+  topt[8][min/max]   – price € (Cena / Цена)
+  topt[1][min/max]   – rooms (Istabas / Комнаты)
+  topt[3][min/max]   – area m² (Platība / Площадь)
+  topt[4][min/max]   – floor (Stāvs / Этаж)
+  opt[6]             – house series (Sērija: 103., Hrušč., Staļina, Jaun. …)
+  opt[11]            – street (Iela; options come from the page schema)
+  sid                – deal type, applied via URL PATH (…/sell/, /hand_over/ …)
+
+City / district / deal type are URL path segments and come from the saved
+search URL itself, not from query params.
 """
 
 from __future__ import annotations
@@ -26,33 +25,40 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 
 RAW_TO_CANONICAL: dict[str, str] = {
-    # rooms
+    # price (real schema)
+    "topt[8][min]": "price_min",
+    "topt[8][max]": "price_max",
+    # rooms (real schema)
+    "topt[1][min]": "rooms_min",
+    "topt[1][max]": "rooms_max",
+    # area m² (real schema)
+    "topt[3][min]": "area_min",
+    "topt[3][max]": "area_max",
+    # floor (real schema)
+    "topt[4][min]": "floor_min",
+    "topt[4][max]": "floor_max",
+    # house series (real schema)
+    "opt[6]": "series",
+    # street (real schema; option labels come from page schema)
+    "opt[11]": "street",
+    # deal type is a URL path segment on SS.lv; kept for saved-value rendering
+    "sid": "deal_type",
+    # ---- legacy aliases (older saved searches) ----
     "topt[18][min]": "rooms_min",
     "topt[18][max]": "rooms_max",
-    # area m²
     "topt[15][min]": "area_min",
     "topt[15][max]": "area_max",
-    # floor (current)
     "topt[26][min]": "floor_min",
     "topt[26][max]": "floor_max",
-    # total floors in building
-    "topt[27][min]": "floors_total_min",
-    "topt[27][max]": "floors_total_max",
-    # price – opt single-value form
-    "opt[17]": "price_min",
-    "opt[32]": "price_max",
-    # price – topt range form
     "topt[17][min]": "price_min",
     "topt[17][max]": "price_max",
-    # price – plain form
+    "opt[17]": "price_min",
+    "opt[32]": "price_max",
+    "opt[1]": "deal_type",
     "pr_min": "price_min",
     "pr_max": "price_max",
     "price_min": "price_min",
     "price_max": "price_max",
-    # deal type
-    "opt[1]": "deal_type",
-    # house type
-    "opt[6]": "house_type",
 }
 
 # ---------------------------------------------------------------------------
@@ -60,18 +66,17 @@ RAW_TO_CANONICAL: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 LABELS: dict[str, dict[str, str]] = {
+    "price_min": {"lv": "Cena no, €", "ru": "Цена от, €", "en": "Price from, €"},
+    "price_max": {"lv": "Cena līdz, €", "ru": "Цена до, €", "en": "Price to, €"},
     "rooms_min": {"lv": "Istabas (no)", "ru": "Комнат (от)", "en": "Rooms (from)"},
     "rooms_max": {"lv": "Istabas (līdz)", "ru": "Комнат (до)", "en": "Rooms (to)"},
     "area_min":  {"lv": "Platība, m² (no)", "ru": "Площадь, м² (от)", "en": "Area, m² (from)"},
     "area_max":  {"lv": "Platība, m² (līdz)", "ru": "Площадь, м² (до)", "en": "Area, m² (to)"},
     "floor_min": {"lv": "Stāvs (no)", "ru": "Этаж (от)", "en": "Floor (from)"},
     "floor_max": {"lv": "Stāvs (līdz)", "ru": "Этаж (до)", "en": "Floor (to)"},
-    "floors_total_min": {"lv": "Stāvi (no)", "ru": "Этажей (от)", "en": "Floors total (from)"},
-    "floors_total_max": {"lv": "Stāvi (līdz)", "ru": "Этажей (до)", "en": "Floors total (to)"},
-    "price_min": {"lv": "Cena no, €", "ru": "Цена от, €", "en": "Price from, €"},
-    "price_max": {"lv": "Cena līdz, €", "ru": "Цена до, €", "en": "Price to, €"},
+    "series":    {"lv": "Sērija", "ru": "Серия", "en": "Series"},
+    "street":    {"lv": "Iela", "ru": "Улица", "en": "Street"},
     "deal_type": {"lv": "Darījuma veids", "ru": "Тип сделки", "en": "Deal type"},
-    "house_type": {"lv": "Mājas tips", "ru": "Тип дома", "en": "House type"},
 }
 
 # ---------------------------------------------------------------------------
@@ -79,17 +84,29 @@ LABELS: dict[str, dict[str, str]] = {
 # ---------------------------------------------------------------------------
 
 OPTION_VALUES: dict[str, dict[str, dict[str, str]]] = {
+    "series": {
+        "67":   {"lv": "103.", "ru": "103.", "en": "103."},
+        "68":   {"lv": "104.", "ru": "104.", "en": "104."},
+        "70":   {"lv": "467.", "ru": "467.", "en": "467."},
+        "73":   {"lv": "Čehu pr.", "ru": "Чешский пр.", "en": "Czech pr."},
+        "76":   {"lv": "Hrušč.", "ru": "Хрущёвка", "en": "Khrushchev"},
+        "74":   {"lv": "M. ģim.", "ru": "Малосемейка", "en": "Small fam."},
+        "79":   {"lv": "P. kara", "ru": "Довоенный", "en": "Pre-war"},
+        "77":   {"lv": "Priv. m.", "ru": "Частный дом", "en": "Private house"},
+        "3616": {"lv": "Renov.", "ru": "Реновир.", "en": "Renovated"},
+        "78":   {"lv": "Specpr.", "ru": "Спецпроект", "en": "Spec. project"},
+        "75":   {"lv": "Staļina", "ru": "Сталинка", "en": "Stalin-era"},
+        "3596": {"lv": "Jaun.", "ru": "Новостройка", "en": "New build"},
+    },
     "deal_type": {
+        "sell": {"lv": "Pārdod", "ru": "Продажа", "en": "Sale"},
+        "hand_over": {"lv": "Izīrē", "ru": "Сдают", "en": "For rent"},
+        "buy": {"lv": "Pērk", "ru": "Покупка", "en": "Buying"},
+        "remove": {"lv": "Īrē", "ru": "Снимут", "en": "Renting"},
+        "change": {"lv": "Maina", "ru": "Обмен", "en": "Exchange"},
+        # legacy numeric values
         "1": {"lv": "Pārdod", "ru": "Продажа", "en": "Sale"},
         "2": {"lv": "Īrē", "ru": "Аренда", "en": "Rent"},
-    },
-    "house_type": {
-        "1":  {"lv": "Ķieģeļu", "ru": "Кирпичный", "en": "Brick"},
-        "2":  {"lv": "Paneļu", "ru": "Панельный", "en": "Panel"},
-        "3":  {"lv": "Koka", "ru": "Деревянный", "en": "Wood"},
-        "4":  {"lv": "Sērijveida", "ru": "Серийный", "en": "Series"},
-        "6":  {"lv": "Monolit", "ru": "Монолитный", "en": "Monolith"},
-        "7":  {"lv": "Jaunbūve", "ru": "Новостройка", "en": "New build"},
     },
 }
 
@@ -98,18 +115,16 @@ OPTION_VALUES: dict[str, dict[str, dict[str, str]]] = {
 # ---------------------------------------------------------------------------
 
 DISPLAY_ORDER: list[str] = [
+    "price_min",
+    "price_max",
     "rooms_min",
     "rooms_max",
     "area_min",
     "area_max",
     "floor_min",
     "floor_max",
-    "floors_total_min",
-    "floors_total_max",
-    "price_min",
-    "price_max",
-    "deal_type",
-    "house_type",
+    "series",
+    "street",
 ]
 
 # ---------------------------------------------------------------------------
@@ -119,4 +134,6 @@ DISPLAY_ORDER: list[str] = [
 UNITS: dict[str, str] = {
     "area_min": "м²",
     "area_max": "м²",
+    "price_min": "€",
+    "price_max": "€",
 }

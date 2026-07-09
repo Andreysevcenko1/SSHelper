@@ -113,13 +113,37 @@ class TestToCanonicalFlats:
         result = to_canonical({"topt[99][min]": "5"}, "flats")
         assert result == {}
 
+    def test_price_real_schema(self):
+        result = to_canonical({"topt[8][min]": "300", "topt[8][max]": "900"}, "flats")
+        assert result["price_min"] == "300"
+        assert result["price_max"] == "900"
+
+    def test_rooms_real_schema(self):
+        result = to_canonical({"topt[1][min]": "2", "topt[1][max]": "3"}, "flats")
+        assert result["rooms_min"] == "2"
+        assert result["rooms_max"] == "3"
+
+    def test_area_real_schema(self):
+        result = to_canonical({"topt[3][min]": "40", "topt[3][max]": "80"}, "flats")
+        assert result["area_min"] == "40"
+        assert result["area_max"] == "80"
+
+    def test_floor_real_schema(self):
+        result = to_canonical({"topt[4][min]": "2", "topt[4][max]": "5"}, "flats")
+        assert result["floor_min"] == "2"
+        assert result["floor_max"] == "5"
+
     def test_deal_type(self):
         result = to_canonical({"opt[1]": "1"}, "flats")
         assert result["deal_type"] == "1"
 
-    def test_house_type(self):
-        result = to_canonical({"opt[6]": "1"}, "flats")
-        assert result["house_type"] == "1"
+    def test_series(self):
+        result = to_canonical({"opt[6]": "76"}, "flats")
+        assert result["series"] == "76"
+
+    def test_street(self):
+        result = to_canonical({"opt[11]": "3711"}, "flats")
+        assert result["street"] == "3711"
 
     def test_floor(self):
         result = to_canonical({"topt[26][min]": "2", "topt[26][max]": "10"}, "flats")
@@ -206,11 +230,11 @@ class TestRenderFlats:
         assert "Продажа" in joined
         _assert_no_raw_keys(lines)
 
-    def test_house_type_resolved(self):
-        raw = {"opt[6]": "1"}
+    def test_series_resolved(self):
+        raw = {"opt[6]": "76"}
         lines = render_canonical_filters(raw, "flats", locale="ru")
         joined = " ".join(lines)
-        assert "Кирпичный" in joined
+        assert "Хрущёвка" in joined
         _assert_no_raw_keys(lines)
 
     def test_unknown_raw_key_not_in_output(self):
@@ -222,7 +246,7 @@ class TestRenderFlats:
         assert "99" not in joined
         _assert_no_raw_keys(lines)
 
-    def test_display_order_rooms_before_price(self):
+    def test_display_order_price_before_rooms(self):
         raw = {
             "pr_min": "50000",
             "topt[18][min]": "2",
@@ -231,7 +255,7 @@ class TestRenderFlats:
         joined = " | ".join(lines)
         rooms_pos = joined.find("Комнат")
         price_pos = joined.find("Цена")
-        assert rooms_pos < price_pos, "Rooms should appear before price"
+        assert price_pos < rooms_pos, "Price should appear before rooms (SS.lv form order)"
 
     def test_label_lv(self):
         raw = {"topt[18][min]": "2"}
@@ -358,7 +382,7 @@ class TestRegressionFlatsUrl:
             "topt[18][min]": "2",
             "topt[15][max]": "80",
             "pr_max": "150000",
-            "opt[6]": "1",
+            "opt[6]": "76",
         }
         lines = render_canonical_filters(raw, "flats", locale="ru")
         _assert_no_raw_keys(lines)
@@ -366,7 +390,7 @@ class TestRegressionFlatsUrl:
         assert "Комнат" in joined
         assert "Площадь" in joined
         assert "Цена" in joined
-        assert "Кирпичный" in joined
+        assert "Хрущёвка" in joined
 
 
 # ---------------------------------------------------------------------------

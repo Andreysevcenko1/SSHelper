@@ -27,6 +27,24 @@ logger = logging.getLogger(__name__)
 _FLOAT_RE = re.compile(r"\d+(?:[.,]\d+)?")
 _YEAR_RE = re.compile(r"(19|20)\d{2}")
 
+# Buy-request / dealer-spam ads ("Pērkam visu marku auto", "Куплю...", "Выкуп авто").
+_BUY_REQUEST_RE = re.compile(
+    r"(?iu)(?<![\w])("
+    r"p[ēe]rkam|p[ēe]rku|izp[ēe]rkam|nopirk[sš]u|"
+    r"покупаем|покупаю|куплю|купим|скупаем|скупка|выкуп|выкупаем|"
+    r"we\s+buy"
+    r")(?![\w])"
+)
+
+
+def is_buy_request(listing: "Listing") -> bool:
+    """Heuristic: True when the ad is a buy-request/dealer solicitation, not a sale."""
+    texts = [listing.title or "", getattr(listing, "detail_raw_cena", None) or ""]
+    for text in texts:
+        if _BUY_REQUEST_RE.search(text):
+            return True
+    return False
+
 
 def _to_float(value) -> float | None:
     if value is None:
@@ -64,6 +82,8 @@ def _option_labels(profile: str, canonical_key: str, raw_value: str) -> list[str
     try:
         if profile == "cars":
             from app.filters.profiles.cars import OPTION_VALUES
+        elif profile == "flats":
+            from app.filters.profiles.flats import OPTION_VALUES
         else:
             return []
     except ImportError:  # pragma: no cover
@@ -102,6 +122,9 @@ def listing_matches_filters(
     price = _listing_price_eur(listing)
     year = _extract_year(getattr(listing, "car_year", None))
     volume = _to_float(getattr(listing, "car_engine", None))
+    rooms = _to_float(getattr(listing, "rooms", None))
+    area = _to_float(getattr(listing, "area_m2", None))
+    floor = _to_float(getattr(listing, "floor_current", None))
 
     numeric_checks: list[tuple[str, float | None, bool]] = []
     for key, raw in canonical.items():
@@ -120,6 +143,18 @@ def listing_matches_filters(
             numeric_checks.append((key, volume, volume is None or volume >= bound))
         elif key == "volume_max":
             numeric_checks.append((key, volume, volume is None or volume <= bound))
+        elif key == "rooms_min":
+            numeric_checks.append((key, rooms, rooms is None or rooms >= bound))
+        elif key == "rooms_max":
+            numeric_checks.append((key, rooms, rooms is None or rooms <= bound))
+        elif key == "area_min":
+            numeric_checks.append((key, area, area is None or area >= bound))
+        elif key == "area_max":
+            numeric_checks.append((key, area, area is None or area <= bound))
+        elif key == "floor_min":
+            numeric_checks.append((key, floor, floor is None or floor >= bound))
+        elif key == "floor_max":
+            numeric_checks.append((key, floor, floor is None or floor <= bound))
 
     for key, actual, ok in numeric_checks:
         if not ok:
@@ -130,6 +165,7 @@ def listing_matches_filters(
         "gearbox": getattr(listing, "car_gearbox", None),
         "body_type": getattr(listing, "car_body_type", None),
         "color": getattr(listing, "car_color", None),
+        "series": getattr(listing, "series", None),
     }
     for key, listing_text in select_sources.items():
         raw_value = canonical.get(key)

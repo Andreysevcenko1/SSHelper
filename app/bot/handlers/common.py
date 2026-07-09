@@ -1,3 +1,5 @@
+import logging
+
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -7,6 +9,8 @@ from app.bot.keyboards.main import main_menu_kb
 from app.bot.utils import try_delete_message
 from app.db.repo import UserSettingsRepository
 from app.i18n import get_text, resolve_lang
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -31,5 +35,18 @@ async def cmd_start(message: Message, session_factory: sessionmaker[Session]) ->
     user_id = message.from_user.id if message.from_user else None
     tg_lang = message.from_user.language_code if message.from_user else None
     lang = get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
-    await message.answer(get_text("welcome", lang), reply_markup=main_menu_kb(lang=lang))
+    sent = await message.answer(get_text("welcome", lang), reply_markup=main_menu_kb(lang=lang))
+    # Pin the menu so it stays reachable when notifications push it up.
+    try:
+        await sent.bot.unpin_all_chat_messages(chat_id=sent.chat.id)
+    except Exception:
+        pass
+    try:
+        await sent.bot.pin_chat_message(
+            chat_id=sent.chat.id,
+            message_id=sent.message_id,
+            disable_notification=True,
+        )
+    except Exception:
+        logger.debug("Could not pin menu message in chat %s", sent.chat.id, exc_info=True)
 

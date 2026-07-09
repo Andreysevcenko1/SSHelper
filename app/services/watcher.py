@@ -10,7 +10,7 @@ from app.db.repo import BroadcastRepository, SearchRepository, UserSettingsRepos
 from app.i18n import get_text, resolve_lang
 from app.services.formatter import format_listing_message
 from app.services.filters import filters_from_json
-from app.services.listing_filter import listing_matches_filters
+from app.services.listing_filter import is_buy_request, listing_matches_filters
 from app.filters.profiles import detect_profile
 from app.services.notifier import send_listing_notification
 from app.services.ss_parser import Listing, SSParser
@@ -51,7 +51,7 @@ def _is_riga(city: str | None, url: str) -> bool:
     return any(kw in src for src in sources for kw in _RIGA_KEYWORDS)
 
 
-def _detect_topic(search_url: str, listing: "Listing", config: Config) -> int:
+def _detect_topic(search_url: str, listing: "Listing", config: Config) -> int | None:
     """Return the Telegram message_thread_id for *listing* based on routing rules.
 
     Routing priority:
@@ -79,6 +79,10 @@ def _detect_topic(search_url: str, listing: "Listing", config: Config) -> int:
     elif is_riga and is_auto:
         thread_id = config.thread_auto_riga
         reason = "Rīga + auto"
+    elif is_auto:
+        # "Citi pilsētu sludinājumi" topic is flats-only: never route cars there.
+        thread_id = None
+        reason = "auto outside Rīga — skipped (other-cities topic is flats-only)"
     else:
         thread_id = config.thread_other_cities
         reason = "other"
@@ -87,8 +91,7 @@ def _detect_topic(search_url: str, listing: "Listing", config: Config) -> int:
         "Broadcast routing: listing %s → thread %s (%s)",
         listing.external_id, thread_id, reason,
     )
-    # thread_id is guaranteed non-None when broadcast_enabled (validated in load_config)
-    return thread_id  # type: ignore[return-value]
+    return thread_id
 
 
 class WatcherService:
@@ -179,6 +182,12 @@ class WatcherService:
         # Send notifications for new listings (newest first, up to 5)
         for raw_listing in new_listings[:5]:
             listing = await self.parser.fetch_and_enrich_listing(raw_listing)
+            if is_buy_request(listing):
+                logger.info(
+                    "Watcher: search #%d — listing %s skipped (buy-request ad): %r",
+                    search.id, listing.external_id, listing.title,
+                )
+                continue
             matches, fail_reason = listing_matches_filters(
                 listing,
                 filters_from_json(search.filters_json),
@@ -226,6 +235,12 @@ class WatcherService:
                 return
 
             thread_id = _detect_topic(search_url, listing, self.config)
+            if thread_id is None:
+                logger.info(
+                    "Broadcast: listing %s not routed to any topic, skipping",
+                    listing.external_id,
+                )
+                return
 
             try:
                 await self._send_group_notification(
