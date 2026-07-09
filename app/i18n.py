@@ -56,9 +56,9 @@ _T: dict[str, dict[str, str]] = {
         "en": "➕ Add search",
     },
     "btn_language": {
-        "lv": "🌐 Valoda / Language",
-        "ru": "🌐 Valoda / Language",
-        "en": "🌐 Valoda / Language",
+        "lv": "🌐 Valoda / Язык",
+        "ru": "🌐 Язык / Valoda",
+        "en": "🌐 Language / Valoda",
     },
     "btn_help": {
         "lv": "ℹ️ Palīdzība",

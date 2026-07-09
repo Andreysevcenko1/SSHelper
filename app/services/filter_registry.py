@@ -175,7 +175,7 @@ CARS_DM_FILTER_REGISTRY: tuple[CarFilterSpec, ...] = (
         raw_keys=("opt[14]",),
         option_provider_id="brand",
         input_mode=INPUT_MODE_SELECT,
-        order=110,
+        order=1,
         ss_param_mode=SS_PARAM_MODE_PATH,
     ),
     CarFilterSpec(
@@ -184,7 +184,7 @@ CARS_DM_FILTER_REGISTRY: tuple[CarFilterSpec, ...] = (
         raw_keys=("opt[15]",),
         option_provider_id="model",
         input_mode=INPUT_MODE_SELECT,
-        order=120,
+        order=2,
         ss_param_mode=SS_PARAM_MODE_PATH,
     ),
 )

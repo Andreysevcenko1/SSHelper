@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 import logging
 import re
 import unicodedata
-from urllib.parse import urljoin
+from urllib.parse import parse_qsl, urljoin, urlparse, urlunparse
 
 import aiohttp
 from bs4 import BeautifulSoup, Tag
@@ -615,10 +615,29 @@ def detect_profile_from_url(url: str) -> str | None:
 class SSParser:
     async def fetch_listings(self, search_url: str, limit: int = 20) -> list[Listing]:
         timeout = aiohttp.ClientTimeout(total=20)
+        parsed = urlparse(search_url)
+        query_params = parse_qsl(parsed.query, keep_blank_values=False)
+        headers = {"User-Agent": "Mozilla/5.0"}
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(search_url, headers={"User-Agent": "Mozilla/5.0"}) as response:
-                response.raise_for_status()
-                html = await response.text()
+            if query_params:
+                # SS.lv ignores GET query params: filters must be POSTed to the
+                # category's /filter/ endpoint and are kept in the cookie session.
+                base_path = parsed.path if parsed.path.endswith("/") else parsed.path + "/"
+                base_url = urlunparse(parsed._replace(path=base_path, query=""))
+                filter_url = base_url if base_path.endswith("/filter/") else base_url + "filter/"
+                async with session.get(base_url, headers=headers) as response:
+                    response.raise_for_status()
+                    await response.text()
+                async with session.post(filter_url, data=query_params, headers=headers) as response:
+                    response.raise_for_status()
+                    html = await response.text()
+                logger.debug(
+                    "Parser: applied %d filter params via POST %s", len(query_params), filter_url
+                )
+            else:
+                async with session.get(search_url, headers=headers) as response:
+                    response.raise_for_status()
+                    html = await response.text()
 
         return self._parse_listings(html=html, base_url=search_url, limit=limit)
 
