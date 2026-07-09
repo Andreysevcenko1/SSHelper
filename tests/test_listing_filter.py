@@ -171,3 +171,21 @@ class TestFlatsFilters:
             "flats",
         )
         assert ok is True
+
+
+class TestFlatsDealType:
+    def test_sell_filter_drops_rent_listing(self):
+        listing = _listing(deal_type="rent")
+        ok, reason = listing_matches_filters(listing, {"sid": "sell"}, "flats")
+        assert ok is False
+        assert "deal_type" in reason
+
+    def test_hand_over_filter_keeps_rent_listing(self):
+        listing = _listing(deal_type="rent")
+        ok, _ = listing_matches_filters(listing, {"sid": "hand_over"}, "flats")
+        assert ok is True
+
+    def test_unknown_deal_never_drops(self):
+        listing = _listing(deal_type="unknown")
+        ok, _ = listing_matches_filters(listing, {"sid": "sell"}, "flats")
+        assert ok is True

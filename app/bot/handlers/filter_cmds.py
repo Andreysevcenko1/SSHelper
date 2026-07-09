@@ -171,6 +171,28 @@ def _model_display_name(slug: str) -> str:
     return " ".join(part.capitalize() for part in slug.split("-"))
 
 
+# SS.lv flats deal-type URL path segments (…/riga/centre/{deal}/).
+_FLATS_DEAL_SLUGS: tuple[str, ...] = ("sell", "buy", "hand_over", "remove", "change")
+
+
+def _rewrite_flats_deal_in_url(url: str, deal_slug: str) -> str:
+    """Set/replace the deal-type path segment on a flats URL.
+
+    /lv/real-estate/flats/riga/centre/ + sell -> …/riga/centre/sell/
+    """
+    parsed = urlparse(url)
+    parts = [p for p in parsed.path.split("/") if p]
+    if "flats" not in parts:
+        return url
+    # Drop any existing trailing deal segment, then append the new one.
+    while parts and parts[-1] in _FLATS_DEAL_SLUGS:
+        parts.pop()
+    if deal_slug:
+        parts.append(deal_slug)
+    new_path = "/" + "/".join(parts) + "/"
+    return urlunparse(parsed._replace(path=new_path))
+
+
 def _extract_model_slug_options_from_html(html: str, lang: str, brand_slug: str) -> list[dict]:
     """Parse model path slugs from a brand page (/{lang}/transport/cars/{brand}/{model}/)."""
     pattern = re.compile(
@@ -308,10 +330,12 @@ def _sorted_fields(schema: dict, lang: str = "lv", profile: str | None = None) -
     for name, info in sorted(schema.items(), key=_order_key):
         if str(info.get("type", "")).lower() == "hidden":
             continue
-        # SS.lv "sid" (deal type) is a URL path segment, not a query filter:
-        # it is already fixed by the saved search URL, so no button for it.
         # "mid[]" is a technical district-checkbox array — not usable as a button.
-        if name == "sid" or name.startswith("mid["):
+        if name.startswith("mid["):
+            continue
+        # Flats "sid" (deal type) is applied via the URL path, but we still
+        # surface it as a select button (options are synthesized deal slugs).
+        if name == "sid" and profile != "flats":
             continue
         canonical = canonical_filter_key_for_profile(name, profile) or name.lower()
         if canonical in seen_canonical:
@@ -498,6 +522,17 @@ async def _resolve_field_options(
     if profile == "cars" and spec is None:
         return [], get_text("filter_options_unavailable", lang), "unknown_canonical"
     options = [o for o in field_info.get("options", []) if str(o.get("value", "")).strip()]
+
+    if canonical == "deal_type" and profile == "flats":
+        # Deal type is a URL path segment; synthesize slug options with
+        # localized labels from the flats profile dictionary.
+        from app.filters.profiles.flats import OPTION_VALUES as _FLATS_OPTS
+        options = [
+            {"value": slug, "text": labels.get(lang) or labels.get("en") or slug}
+            for slug, labels in _FLATS_OPTS.get("deal_type", {}).items()
+            if slug in _FLATS_DEAL_SLUGS
+        ]
+        source = "deal_path_slug"
 
     if canonical == "brand" and profile == "cars":
         options = await _fetch_brand_slug_options(search_url, _cars_lang_from_url(search_url))
@@ -1404,6 +1439,19 @@ async def cb_filter_opt(
             selected_brand_slug = _normalize_brand_slug(value)
             value = selected_brand_slug
         repo.set_filter(search, field_name, value)
+        if canonical == "deal_type" and profile == "flats":
+            merged_filters = filters_from_json(search.filters_json)
+            rewritten_base = _rewrite_flats_deal_in_url(search.base_url or search.url or "", value)
+            search.base_url = rewritten_base
+            search.effective_url = build_effective_url(rewritten_base, merged_filters)
+            final_search_url = search.effective_url or ""
+            logger.debug(
+                "filter_cmds: selected_deal_slug=%s final_search_url=%s",
+                value,
+                final_search_url,
+            )
+            session.add(search)
+            session.commit()
         if canonical == "model":
             model_slug = value.strip().lower()
             merged_filters = filters_from_json(search.filters_json)
