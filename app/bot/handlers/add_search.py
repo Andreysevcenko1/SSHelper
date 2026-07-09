@@ -34,6 +34,22 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
+_ALLOWED_SS_HOSTS = {
+    "ss.lv", "www.ss.lv", "m.ss.lv",
+    "ss.com", "www.ss.com", "m.ss.com",
+}
+
+
+def _normalize_ss_url(url: str) -> str:
+    """Normalize SS.lv URL variants: mobile m. host -> www. (different HTML)."""
+    url = url.strip()
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if host in {"m.ss.lv", "m.ss.com"}:
+        return url.replace(f"//{parsed.netloc}", f"//www.{host[2:]}", 1)
+    return url
+
+
 def _validate_ss_url(url: str) -> str | None:
     """Return None if valid, or a human-readable error string (language-agnostic)."""
     url = url.strip()
@@ -43,7 +59,7 @@ def _validate_ss_url(url: str) -> str | None:
     if parsed.scheme not in {"http", "https"}:
         return "bad_scheme"
     host = (parsed.hostname or "").lower()
-    if host not in {"ss.lv", "www.ss.lv", "ss.com", "www.ss.com"}:
+    if host not in _ALLOWED_SS_HOSTS:
         return "bad_domain"
     return None
 
@@ -161,6 +177,7 @@ async def _process_add_url(
     if error_code:
         await _reply(message, get_text("err_invalid_url", lang), edit_msg_id=edit_msg_id, lang=lang)
         return
+    url = _normalize_ss_url(url)
 
     raw_filters = extract_filters_from_url(url)
     normalized = normalize_filters(raw_filters)
