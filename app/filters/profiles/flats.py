@@ -116,6 +116,7 @@ OPTION_VALUES: dict[str, dict[str, dict[str, str]]] = {
 
 DISPLAY_ORDER: list[str] = [
     "deal_type",
+    "series",
     "price_min",
     "price_max",
     "rooms_min",
@@ -124,7 +125,6 @@ DISPLAY_ORDER: list[str] = [
     "area_max",
     "floor_min",
     "floor_max",
-    "series",
     "street",
 ]
 
