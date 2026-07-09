@@ -5,6 +5,7 @@ new listings directly to the configured forum topics (message_thread_id).
 No user_id involvement at any point.
 """
 
+import asyncio
 import logging
 
 from aiogram import Bot
@@ -14,6 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import Config
 from app.db.models import GroupSearch
 from app.db.repo import GroupSearchRepository
+from app.services.fetch_coordinator import FetchCoordinator
 from app.services.formatter import format_listing_message
 from app.services.listing_filter import is_buy_request
 from app.services.notifier import send_listing_notification
@@ -48,11 +50,13 @@ class GroupWatcherService:
         parser: SSParser,
         bot: Bot,
         config: Config,
+        coordinator: FetchCoordinator | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.parser = parser
         self.bot = bot
         self.config = config
+        self.coordinator = coordinator or FetchCoordinator(parser)
 
     async def check_all(self) -> None:
         session = self.session_factory()
@@ -61,16 +65,20 @@ class GroupWatcherService:
             searches = repo.get_active_group_searches()
             logger.info("GroupWatcher: checking %d active group search(es)", len(searches))
 
-            for search in searches:
+            self.coordinator.prune()
+
+            async def _check_one(search) -> None:
                 try:
                     fetch_url = search.effective_url or search.url
-                    listings = await self.parser.fetch_listings(fetch_url, limit=10)
+                    listings = await self.coordinator.fetch_listings(fetch_url, limit=10)
                     await self._process_listings(repo=repo, search=search, listings=listings)
                 except Exception:
                     logger.exception(
                         "GroupWatcher: failed to process group search #%d",
                         search.id,
                     )
+
+            await asyncio.gather(*(_check_one(s) for s in searches))
         finally:
             session.close()
 
@@ -140,7 +148,7 @@ class GroupWatcherService:
             return
 
         for raw_listing in new_listings[:5]:
-            listing = await self.parser.fetch_and_enrich_listing(raw_listing)
+            listing = await self.coordinator.enrich_listing(raw_listing)
             if is_buy_request(listing):
                 logger.info(
                     "GroupWatcher: listing %s skipped (buy-request ad): %r",

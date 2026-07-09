@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import unicodedata
 from aiogram import Bot
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import Config
 from app.db.repo import BroadcastRepository, SearchRepository, UserSettingsRepository
 from app.i18n import get_text, resolve_lang
+from app.services.fetch_coordinator import FetchCoordinator
 from app.services.formatter import format_listing_message
 from app.services.filters import filters_from_json
 from app.services.listing_filter import is_buy_request, listing_matches_filters
@@ -101,11 +103,13 @@ class WatcherService:
         parser: SSParser,
         bot: Bot,
         config: Config | None = None,
+        coordinator: FetchCoordinator | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.parser = parser
         self.bot = bot
         self.config = config
+        self.coordinator = coordinator or FetchCoordinator(parser)
 
         if config and config.broadcast_enabled:
             logger.info(
@@ -127,14 +131,18 @@ class WatcherService:
             searches = repo.get_active_searches()
             logger.info("Watcher: checking %d active search(es)", len(searches))
 
-            for search in searches:
+            self.coordinator.prune()
+
+            async def _check_one(search) -> None:
                 try:
                     fetch_url = search.effective_url or search.url
-                    listings = await self.parser.fetch_listings(fetch_url, limit=10)
+                    listings = await self.coordinator.fetch_listings(fetch_url, limit=10)
                     await self._process_listings(repo=repo, search=search, listings=listings)
                 except Exception:
                     logger.exception("Watcher: failed to process search #%d", search.id)
-                    continue
+
+            # Concurrency is bounded inside FetchCoordinator (shared semaphore).
+            await asyncio.gather(*(_check_one(s) for s in searches))
         finally:
             session.close()
 
@@ -181,7 +189,7 @@ class WatcherService:
 
         # Send notifications for new listings (newest first, up to 5)
         for raw_listing in new_listings[:5]:
-            listing = await self.parser.fetch_and_enrich_listing(raw_listing)
+            listing = await self.coordinator.enrich_listing(raw_listing)
             if is_buy_request(listing):
                 logger.info(
                     "Watcher: search #%d — listing %s skipped (buy-request ad): %r",
