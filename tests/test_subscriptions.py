@@ -167,3 +167,20 @@ def test_plan_i18n_texts():
     for lang in ("ru", "lv", "en"):
         for plan in PLANS.values():
             assert get_text(plan.label_i18n_key, lang, eur=plan.price_eur, stars=plan.price_stars)
+
+
+def test_plan_star_prices():
+    assert PLANS["plus1"].price_stars == 150
+    assert PLANS["plus4"].price_stars == 380
+    assert PLANS["plus9"].price_stars == 680
+
+
+def test_find_duplicate_same_url_different_filters(session):
+    repo = SearchRepository(session)
+    repo.add_search(
+        user_id=1, url="https://www.ss.lv/lv/transport/cars/audi/", title="c",
+        base_url="https://www.ss.lv/lv/transport/cars/audi/", filters_json='{"opt[8][max]": "5000"}',
+    )
+    assert repo.find_duplicate(1, "https://www.ss.lv/lv/transport/cars/audi/", '{"opt[8][max]": "9000"}') is None
+    assert repo.find_duplicate(1, "https://www.ss.lv/lv/transport/cars/audi/", '{"opt[8][max]": "5000"}') is not None
+    assert repo.find_duplicate(1, "https://www.ss.lv/lv/transport/cars/audi/", None) is None

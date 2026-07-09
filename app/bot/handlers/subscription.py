@@ -4,6 +4,7 @@ import logging
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
+from aiogram.filters import Command
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardMarkup,
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.bot.callbacks import MenuCB, SubCB
 from app.bot.handlers.common import get_user_lang
+from app.config import Config
 from app.db.repo import SearchRepository, SubscriptionRepository
 from app.i18n import get_text
 from app.services.plans import PLAN_DURATION_DAYS, PLANS
@@ -157,3 +159,36 @@ async def on_successful_payment(
     await message.answer(
         get_text("sub_paid_ok", lang, total=plan.total_searches, days=PLAN_DURATION_DAYS)
     )
+
+
+# ------------------------------------------------------------------ #
+# Admin: /stars — bot Stars balance & recent transactions             #
+# ------------------------------------------------------------------ #
+
+
+@router.message(Command("stars"))
+async def cmd_stars(message: Message, config: Config) -> None:
+    if message.from_user is None or message.from_user.id not in config.admin_user_ids:
+        return
+    if message.bot is None:
+        return
+    try:
+        result = await message.bot.get_star_transactions(limit=20)
+    except Exception as exc:
+        logger.warning("stars: failed to fetch transactions: %s", exc)
+        await message.answer(f"⚠️ Не удалось получить транзакции: {exc}")
+        return
+
+    txs = result.transactions or []
+    income = 0
+    lines: list[str] = []
+    for tx in txs:
+        sign = "+" if tx.source is not None else "-"
+        if tx.source is not None:
+            income += tx.amount
+        when = tx.date.strftime("%d.%m %H:%M") if tx.date else "?"
+        lines.append(f"{sign}{tx.amount} ⭐  ({when})")
+
+    header = f"⭐ Транзакций (последние {len(txs)}): приход {income} ⭐"
+    body = "\n".join(lines) if lines else "Пока нет транзакций."
+    await message.answer(f"{header}\n\n{body}")

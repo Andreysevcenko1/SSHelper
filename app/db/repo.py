@@ -86,6 +86,15 @@ class SearchRepository:
         )
         return self.session.scalars(stmt).first()
 
+    def find_duplicate(self, user_id: int, base_url: str, filters_json: str | None) -> Search | None:
+        """Return a search with the same base_url AND identical filters, or None."""
+        stmt = select(Search).where(Search.user_id == user_id, Search.base_url == base_url)
+        wanted = filters_json or "{}"
+        for search in self.session.scalars(stmt):
+            if (search.filters_json or "{}") == wanted:
+                return search
+        return None
+
     def pause_search(self, search: Search) -> None:
         search.is_active = False
         self.session.add(search)
