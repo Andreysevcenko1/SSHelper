@@ -15,6 +15,7 @@ from app.config import Config
 from app.db.models import GroupSearch
 from app.db.repo import GroupSearchRepository
 from app.services.formatter import format_listing_message
+from app.services.listing_filter import is_buy_request
 from app.services.notifier import send_listing_notification
 from app.services.ss_parser import Listing, SSParser
 
@@ -117,6 +118,18 @@ class GroupWatcherService:
         repo.update_last_seen(search, newest.external_id)
 
         route_key = search.route_key if search.route_key in _VALID_ROUTE_KEYS else "other"
+
+        # "Citi pilsētu sludinājumi" topic is flats-only: never post cars there.
+        fetch_url = str(
+            getattr(search, "effective_url", None) or getattr(search, "url", "") or ""
+        ).lower()
+        if route_key == "other" and ("/transport/" in fetch_url or "/cars/" in fetch_url):
+            logger.info(
+                "GroupWatcher: group search #%d is auto but routed to other-cities topic — skipping",
+                search.id,
+            )
+            return
+
         thread_id = _thread_id_for_route_key(route_key, self.config)
 
         if thread_id is None:
@@ -128,6 +141,12 @@ class GroupWatcherService:
 
         for raw_listing in new_listings[:5]:
             listing = await self.parser.fetch_and_enrich_listing(raw_listing)
+            if is_buy_request(listing):
+                logger.info(
+                    "GroupWatcher: listing %s skipped (buy-request ad): %r",
+                    listing.external_id, listing.title,
+                )
+                continue
             try:
                 await self._send_group_notification(
                     chat_id=self.config.broadcast_chat_id,  # type: ignore[arg-type]

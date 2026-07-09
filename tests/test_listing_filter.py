@@ -87,3 +87,87 @@ def test_unknown_filter_keys_ignored():
 def test_no_profile_always_matches():
     lst = _listing(price_total_eur=1.0)
     assert listing_matches_filters(lst, {"topt[8][min]": "5000"}, None)[0] is True
+
+
+# ---------------------------------------------------------------------------
+# Buy-request detection
+# ---------------------------------------------------------------------------
+
+
+class TestIsBuyRequest:
+    def test_perkam_lv(self):
+        from app.services.listing_filter import is_buy_request
+        listing = _listing(title="Pērkam. покупаем. Visu marku auto jebkurā stāvoklī")
+        assert is_buy_request(listing) is True
+
+    def test_kuplyu_ru(self):
+        from app.services.listing_filter import is_buy_request
+        listing = _listing(title="Куплю авто в любом состоянии, срочный выкуп")
+        assert is_buy_request(listing) is True
+
+    def test_vykup(self):
+        from app.services.listing_filter import is_buy_request
+        listing = _listing(title="Выкуп автомобилей")
+        assert is_buy_request(listing) is True
+
+    def test_normal_sale_not_flagged(self):
+        from app.services.listing_filter import is_buy_request
+        listing = _listing(title="BMW X5 3.0d, 2018, ļoti labā stāvoklī")
+        assert is_buy_request(listing) is False
+
+    def test_normal_flat_not_flagged(self):
+        from app.services.listing_filter import is_buy_request
+        listing = _listing(title="Izīrē 2-istabu dzīvokli centrā")
+        assert is_buy_request(listing) is False
+
+
+# ---------------------------------------------------------------------------
+# Flats numeric + series filters
+# ---------------------------------------------------------------------------
+
+
+class TestFlatsFilters:
+    def test_price_min_drops_cheaper_flat(self):
+        listing = _listing(price_total_eur=300.0)
+        ok, reason = listing_matches_filters(listing, {"topt[8][min]": "500"}, "flats")
+        assert ok is False
+        assert "price_min" in reason
+
+    def test_rooms_min(self):
+        listing = _listing(rooms=1)
+        ok, reason = listing_matches_filters(listing, {"topt[1][min]": "2"}, "flats")
+        assert ok is False
+        assert "rooms_min" in reason
+
+    def test_area_range_pass(self):
+        listing = _listing(area_m2=55.0)
+        ok, _ = listing_matches_filters(
+            listing, {"topt[3][min]": "40", "topt[3][max]": "80"}, "flats"
+        )
+        assert ok is True
+
+    def test_floor_max(self):
+        listing = _listing(floor_current=9)
+        ok, reason = listing_matches_filters(listing, {"topt[4][max]": "5"}, "flats")
+        assert ok is False
+        assert "floor_max" in reason
+
+    def test_series_match(self):
+        listing = _listing(series="Hrušč.")
+        ok, _ = listing_matches_filters(listing, {"opt[6]": "76"}, "flats")
+        assert ok is True
+
+    def test_series_mismatch(self):
+        listing = _listing(series="Jaun.")
+        ok, reason = listing_matches_filters(listing, {"opt[6]": "76"}, "flats")
+        assert ok is False
+        assert "series" in reason
+
+    def test_missing_data_never_drops(self):
+        listing = _listing()
+        ok, _ = listing_matches_filters(
+            listing,
+            {"topt[8][min]": "500", "topt[1][min]": "2", "opt[6]": "76"},
+            "flats",
+        )
+        assert ok is True

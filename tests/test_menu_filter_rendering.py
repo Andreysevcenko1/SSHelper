@@ -18,11 +18,11 @@ def test_flats_filters_render_human_labels_no_raw_keys():
     search = _search("https://www.ss.lv/lv/real-estate/flats/riga/sell/")
     text = _format_search_details(
         search,
-        {"topt[18][min]": "2", "opt[6]": "1", "pr_max": "150000"},
+        {"topt[18][min]": "2", "opt[6]": "76", "pr_max": "150000"},
         "ru",
     )
     assert "Комнат" in text
-    assert "Тип дома" in text
+    assert "Серия" in text
     assert "Цена" in text
     assert "opt[" not in text and "topt[" not in text
 
