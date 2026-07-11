@@ -6,14 +6,17 @@ from app.i18n import get_text, translate_category
 
 
 
-def searches_list_kb(searches: list, lang: str = "lv") -> InlineKeyboardMarkup:
+def searches_list_kb(
+    searches: list, lang: str = "lv", display_numbers: dict[int, int] | None = None
+) -> InlineKeyboardMarkup:
     """List of user searches with tap-to-view action."""
     b = InlineKeyboardBuilder()
     for s in searches:
         cat_label = translate_category(s.title, lang)
         state_icon = "▶️" if s.is_active else "⏸"
+        no = (display_numbers or {}).get(s.id, s.id)
         b.button(
-            text=f"{state_icon} #{s.id} — {cat_label}",
+            text=f"{state_icon} #{no} — {cat_label}",
             callback_data=SearchCB(action="view", sid=s.id),
         )
     b.button(text=get_text("btn_add_search", lang), callback_data=MenuCB(action="add_start"))

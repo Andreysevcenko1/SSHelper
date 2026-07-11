@@ -139,6 +139,9 @@ def _validate_ss_url(url: str) -> str | None:
     host = (parsed.hostname or "").lower()
     if host not in _ALLOWED_SS_HOSTS:
         return "bad_domain"
+    if "/msg/" in parsed.path:
+        # Link to a single listing, not a section/search page.
+        return "listing_url"
     return None
 
 
@@ -207,7 +210,9 @@ async def fsm_add_url(
 
     error_code = _validate_ss_url(url)
     if error_code:
-        error_msg = get_text("err_invalid_url", lang)
+        error_msg = get_text(
+            "err_listing_url" if error_code == "listing_url" else "err_invalid_url", lang
+        )
         # Edit the prompt to show the error and keep the cancel button
         if prompt_msg_id and message.bot:
             try:
@@ -282,7 +287,8 @@ async def _process_add_url(
 ) -> None:
     error_code = _validate_ss_url(url)
     if error_code:
-        await _reply(message, get_text("err_invalid_url", lang), edit_msg_id=edit_msg_id, lang=lang)
+        key = "err_listing_url" if error_code == "listing_url" else "err_invalid_url"
+        await _reply(message, get_text(key, lang), edit_msg_id=edit_msg_id, lang=lang)
         return
     url = _normalize_ss_url(url)
 
@@ -326,7 +332,7 @@ async def _process_add_url(
         repo = SearchRepository(session)
         existing = repo.find_duplicate(user_id, b_url, filters_json_str)
         if existing:
-            text = get_text("err_duplicate_url", lang, sid=existing.id)
+            text = get_text("err_duplicate_url", lang, sid=repo.display_no(existing))
             from app.bot.keyboards.searches import error_kb
             if edit_msg_id and message.bot:
                 try:
@@ -370,12 +376,13 @@ async def _process_add_url(
             category_profile=profile,
         )
         search_id = search.id
+        display_no = repo.display_no(search)
     finally:
         session.close()
 
     category_label = translate_category(category, lang)
     lines = [
-        f"✅ <b>#{search_id}</b> — {category_label}",
+        f"✅ <b>#{display_no}</b> — {category_label}",
         get_text("search_detail_url", lang, url=b_url),
     ]
     if normalized:

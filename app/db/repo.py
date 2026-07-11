@@ -74,6 +74,15 @@ class SearchRepository:
         stmt = select(Search).where(Search.user_id == user_id, Search.is_active.is_(True))
         return len(list(self.session.scalars(stmt).all()))
 
+    def display_numbers(self, user_id: int) -> dict[int, int]:
+        """Map search.id → 1-based position in the user's list (stable, ordered by id)."""
+        stmt = select(Search.id).where(Search.user_id == user_id).order_by(Search.id)
+        return {sid: n for n, sid in enumerate(self.session.scalars(stmt), start=1)}
+
+    def display_no(self, search: Search) -> int:
+        """1-based display number of *search* within its owner's searches."""
+        return self.display_numbers(search.user_id).get(search.id, search.id)
+
     def get_by_id(self, search_id: int) -> Search | None:
         return self.session.get(Search, search_id)
 

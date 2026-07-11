@@ -216,3 +216,17 @@ def test_mobile_url_normalized_to_www():
     assert _normalize_ss_url("https://m.ss.lv/lv/real-estate/flats/") == \
         "https://www.ss.lv/lv/real-estate/flats/"
     assert _normalize_ss_url("https://www.ss.lv/lv/x/") == "https://www.ss.lv/lv/x/"
+
+
+def test_listing_url_rejected():
+    from app.bot.handlers.add_search import _validate_ss_url
+    assert _validate_ss_url(
+        "https://www.ss.lv/msg/lv/real-estate/flats/riga/kliversala/hiofx.html"
+    ) == "listing_url"
+    assert _validate_ss_url("https://www.ss.lv/lv/real-estate/flats/riga/") is None
+
+
+def test_err_listing_url_i18n():
+    from app.i18n import get_text
+    for lang in ("ru", "lv", "en"):
+        assert get_text("err_listing_url", lang)

@@ -46,6 +46,19 @@ from app.services.ss_parser import SSParser
 from app.filters.renderer import render_canonical_filters
 
 logger = logging.getLogger(__name__)
+
+def _display_sid(session_factory, sid: int) -> int:
+    """Human-facing per-user sequential number for a search (falls back to id)."""
+    session = session_factory()
+    try:
+        repo = SearchRepository(session)
+        search = repo.get_by_id(sid)
+        if search is None:
+            return sid
+        return repo.display_no(search)
+    finally:
+        session.close()
+
 router = Router()
 
 # ------------------------------------------------------------------ #
@@ -273,6 +286,23 @@ def _prompt_hint_key(field_name: str, field_info: dict, profile: str | None) -> 
         spec = _spec_for_canonical(canonical) if canonical else None
         if spec is not None:
             return spec.prompt_hint_i18n_key
+    if profile == "flats":
+        canonical = canonical_filter_key_for_profile(field_name, profile)
+        flats_hints = {
+            "price_min": "filter_hint_price",
+            "price_max": "filter_hint_price",
+            "rooms": "filter_hint_rooms",
+            "area": "filter_hint_area",
+            "floor": "filter_hint_floor",
+            "street": "filter_hint_street",
+            "series": "filter_hint_select",
+            "deal_type": "filter_hint_select",
+        }
+        if canonical in flats_hints:
+            return flats_hints[canonical]
+    # Select-style fields get their value from the buttons below, not free text.
+    if field_info.get("options"):
+        return "filter_hint_select"
     if _is_numeric_field(field_name, str(field_info.get("type", ""))):
         return "filter_hint_numeric"
     return "filter_hint_text"
@@ -653,7 +683,7 @@ async def cmd_filters(
         if filters
         else get_text("filters_none", lang)
     )
-    text = get_text("filters_header", lang, sid=sid, content=content)
+    text = get_text("filters_header", lang, sid=_display_sid(session_factory, sid), content=content)
     await message.answer(text, reply_markup=filters_menu_kb(sid, bool(filters), lang=lang))
 
 
@@ -878,7 +908,7 @@ async def cb_filter_show(
             reply_markup=no_filters_kb(sid, lang=lang),
         )
     else:
-        lines = [get_text("filters_header", lang, sid=sid, content="")]
+        lines = [get_text("filters_header", lang, sid=_display_sid(session_factory, sid), content="")]
         lines += _filters_lines(filters, lang=lang, profile=profile)
         await _safe_edit(
             callback,
@@ -921,7 +951,7 @@ async def cb_filter_del_start(
         )
     else:
         content = "\n".join(_filters_lines(filters, lang=lang, profile=profile))
-        text = get_text("filters_header", lang, sid=sid, content=content)
+        text = get_text("filters_header", lang, sid=_display_sid(session_factory, sid), content=content)
         await _safe_edit(
             callback,
             sanitize_personal_ui_text(text, locale=lang),
@@ -980,7 +1010,7 @@ async def cb_filter_edit_start(
 
     await _safe_edit(
         callback,
-        get_text("filters_header", lang, sid=sid, content=""),
+        get_text("filters_header", lang, sid=_display_sid(session_factory, sid), content=""),
         reply_markup=filter_fields_kb(sid, fields, page=0, lang=lang),
     )
 
@@ -1063,7 +1093,7 @@ async def cb_filter_delete_key(
 
     if filters:
         content = "\n".join(_filters_lines(filters, lang=lang, profile=profile))
-        text = get_text("filters_header", lang, sid=sid, content=content)
+        text = get_text("filters_header", lang, sid=_display_sid(session_factory, sid), content=content)
         await _safe_edit(
             callback,
             sanitize_personal_ui_text(text, locale=lang, profile=profile),
@@ -1582,7 +1612,7 @@ async def cb_page(
         await state.update_data(field_order=field_order)
         await _safe_edit(
             callback,
-            get_text("filters_header", lang, sid=sid, content=""),
+            get_text("filters_header", lang, sid=_display_sid(session_factory, sid), content=""),
             reply_markup=filter_fields_kb(sid, fields, page=pg, lang=lang),
         )
     elif callback_data.ctx == "opts":

@@ -184,3 +184,15 @@ def test_find_duplicate_same_url_different_filters(session):
     assert repo.find_duplicate(1, "https://www.ss.lv/lv/transport/cars/audi/", '{"opt[8][max]": "9000"}') is None
     assert repo.find_duplicate(1, "https://www.ss.lv/lv/transport/cars/audi/", '{"opt[8][max]": "5000"}') is not None
     assert repo.find_duplicate(1, "https://www.ss.lv/lv/transport/cars/audi/", None) is None
+
+
+def test_display_numbers_sequential_after_delete(session):
+    repo = SearchRepository(session)
+    s1 = repo.add_search(user_id=1, url="https://www.ss.lv/lv/a/", title="a")
+    s2 = repo.add_search(user_id=1, url="https://www.ss.lv/lv/b/", title="b")
+    repo.delete_search(s1)
+    s3 = repo.add_search(user_id=1, url="https://www.ss.lv/lv/c/", title="c")
+    nums = repo.display_numbers(1)
+    assert nums[s2.id] == 1
+    assert nums[s3.id] == 2
+    assert repo.display_no(s3) == 2
