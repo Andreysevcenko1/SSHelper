@@ -49,13 +49,13 @@ async def _safe_edit(callback: CallbackQuery, text: str, reply_markup=None) -> N
             logger.debug("_safe_edit failed: %s", exc)
 
 
-def _format_search_details(search, filters: dict, lang: str) -> str:
+def _format_search_details(search, filters: dict, lang: str, display_no: int | None = None) -> str:
     category_label = translate_category(search.title, lang)
     status = get_text("status_active" if search.is_active else "status_paused", lang)
     display_url = base_url_without_query(search.effective_url or search.url)
     profile = search.category_profile or detect_profile(search.effective_url or search.url or "")
     lines = [
-        get_text("search_detail_header", lang, sid=search.id),
+        get_text("search_detail_header", lang, sid=display_no or search.id),
         get_text("search_detail_category", lang, cat=category_label),
         get_text("search_detail_status", lang, status=status),
         get_text("search_detail_url", lang, url=display_url),
@@ -150,7 +150,12 @@ async def cb_menu_searches(
         kb = no_searches_kb(lang=lang)
     else:
         text = get_text("searches_list_header", lang, count=len(searches))
-        kb = searches_list_kb(searches, lang=lang)
+        session2 = session_factory()
+        try:
+            nums = SearchRepository(session2).display_numbers(user_id)
+        finally:
+            session2.close()
+        kb = searches_list_kb(searches, lang=lang, display_numbers=nums)
 
     await _safe_edit(callback, text, reply_markup=kb)
     await callback.answer()
@@ -212,7 +217,7 @@ async def cb_search_view(
             await callback.answer()
             return
         filters = filters_from_json(search.filters_json)
-        text = _format_search_details(search, filters, lang)
+        text = _format_search_details(search, filters, lang, display_no=repo.display_no(search))
         kb = search_actions_kb(search.id, search.is_active, lang=lang)
     finally:
         session.close()
@@ -245,12 +250,13 @@ async def cb_search_pause(
             return
         repo.pause_search(search)
         sid = search.id
+        disp = repo.display_no(search)
     finally:
         session.close()
 
     await _safe_edit(
         callback,
-        get_text("search_paused", lang, sid=sid),
+        get_text("search_paused", lang, sid=disp),
         reply_markup=after_action_kb(search_id=sid, lang=lang),
     )
     await callback.answer()
@@ -287,12 +293,13 @@ async def cb_search_resume(
             return
         repo.resume_search(search)
         sid = search.id
+        disp = repo.display_no(search)
     finally:
         session.close()
 
     await _safe_edit(
         callback,
-        get_text("search_resumed", lang, sid=sid),
+        get_text("search_resumed", lang, sid=disp),
         reply_markup=after_action_kb(search_id=sid, lang=lang),
     )
     await callback.answer()
@@ -318,6 +325,7 @@ async def cb_search_delete(
             )
             return
         sid = search.id
+        disp = repo.display_no(search)
         repo.delete_search(search)
     finally:
         session.close()
@@ -327,7 +335,7 @@ async def cb_search_delete(
 
     await _safe_edit(
         callback,
-        get_text("search_deleted", lang, sid=sid),
+        get_text("search_deleted", lang, sid=disp),
         reply_markup=after_action_kb(lang=lang),
     )
     await callback.answer()
@@ -354,6 +362,7 @@ async def cb_search_filters(
             return
         filters = filters_from_json(search.filters_json)
         sid = search.id
+        disp = repo.display_no(search)
     finally:
         session.close()
 
@@ -373,7 +382,7 @@ async def cb_search_filters(
             )
     else:
         content = get_text("filters_none", lang)
-    text = get_text("filters_header", lang, sid=sid, content=content)
+    text = get_text("filters_header", lang, sid=disp, content=content)
     await _safe_edit(
         callback,
         text,

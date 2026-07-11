@@ -186,6 +186,7 @@ class WatcherService:
         repo.update_last_seen(search, newest.external_id)
 
         lang = self._resolve_user_lang(search.user_id)
+        display_no = repo.display_no(search)
 
         # Send notifications for new listings (newest first, up to 5)
         for raw_listing in new_listings[:5]:
@@ -210,7 +211,7 @@ class WatcherService:
                 try:
                     await self._send_notification(
                         chat_id=search.user_id,
-                        search_id=search.id,
+                        search_id=display_no,
                         listing=listing,
                         lang=lang,
                     )

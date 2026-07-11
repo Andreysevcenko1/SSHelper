@@ -506,6 +506,26 @@ _T: dict[str, dict[str, str]] = {
         "ru": "Пример: BMW",
         "en": "Example: BMW",
     },
+    "filter_hint_rooms": {
+        "lv": "Piemērs: 2",
+        "ru": "Пример: 2",
+        "en": "Example: 2",
+    },
+    "filter_hint_area": {
+        "lv": "Piemērs: 45 (m²)",
+        "ru": "Пример: 45 (м²)",
+        "en": "Example: 45 (m²)",
+    },
+    "filter_hint_floor": {
+        "lv": "Piemērs: 3",
+        "ru": "Пример: 3",
+        "en": "Example: 3",
+    },
+    "filter_hint_street": {
+        "lv": "Piemērs: Brīvības iela",
+        "ru": "Пример: Бривибас (улица)",
+        "en": "Example: Brivibas street",
+    },
     "filter_select_brand_first": {
         "lv": "Vispirms izvēlieties automašīnas marku.",
         "ru": "Сначала выберите марку автомобиля.",
@@ -690,6 +710,11 @@ _T: dict[str, dict[str, str]] = {
         "lv": "❌ URL jābūt no ss.lv vai ss.com domēna",
         "ru": "❌ URL должен быть с домена ss.lv или ss.com",
         "en": "❌ URL must be from the ss.lv or ss.com domain",
+    },
+    "err_listing_url": {
+        "lv": "❌ Šī ir saite uz konkrētu sludinājumu. Lūdzu, ievietojiet saiti uz sadaļu vai meklēšanas rezultātiem, piemēram: https://www.ss.lv/lv/transport/cars/",
+        "ru": "❌ Это ссылка на конкретное объявление — так поиск не сработает. Вставьте ссылку на раздел или результаты поиска, например: https://www.ss.lv/lv/transport/cars/",
+        "en": "❌ This is a link to a single listing — it won't work as a search. Please paste a section or search-results link, e.g. https://www.ss.lv/lv/transport/cars/",
     },
     "err_duplicate_url": {
         "lv": "⚠️ Meklējums ar šo URL jau eksistē (#{sid})",
