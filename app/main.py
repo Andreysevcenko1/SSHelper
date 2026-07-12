@@ -4,7 +4,7 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
-from aiogram.types import BotCommand
+from aiogram.types import BotCommand, BotCommandScopeChat
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -28,12 +28,16 @@ _BOT_COMMANDS = [
     BotCommand(command="setfilter", description="Установить фильтр: /setfilter <ID> <поле> <значение>"),
     BotCommand(command="delfilter", description="Удалить фильтр: /delfilter <ID> <поле>"),
     BotCommand(command="clearfilters", description="Очистить фильтры: /clearfilters <ID>"),
-    # Admin-only group search management
+]
+
+# Admin-only commands: shown in the menu only for ADMIN_USER_IDS chats.
+_ADMIN_COMMANDS = _BOT_COMMANDS + [
     BotCommand(command="gadd", description="[Admin] Добавить групповой поиск: /gadd <route> <url> [title]"),
     BotCommand(command="glist", description="[Admin] Список групповых поисков"),
     BotCommand(command="gpause", description="[Admin] Приостановить: /gpause <ID>"),
     BotCommand(command="gresume", description="[Admin] Возобновить: /gresume <ID>"),
     BotCommand(command="gdelete", description="[Admin] Удалить: /gdelete <ID>"),
+    BotCommand(command="stars", description="[Admin] Баланс/транзакции Stars"),
 ]
 
 logger = logging.getLogger(__name__)
@@ -65,6 +69,14 @@ async def run() -> None:
 
     # Register bot commands in Telegram client menu
     await bot.set_my_commands(_BOT_COMMANDS)
+    # Admins additionally see the [Admin] commands in their private chat menu.
+    for admin_id in config.admin_user_ids:
+        try:
+            await bot.set_my_commands(
+                _ADMIN_COMMANDS, scope=BotCommandScopeChat(chat_id=admin_id)
+            )
+        except Exception as exc:
+            logger.warning("Could not set admin commands for %s: %s", admin_id, exc)
 
     dp = Dispatcher()
     dp.include_router(get_main_router())
