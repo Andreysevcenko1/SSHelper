@@ -32,14 +32,14 @@ def session():
 def test_plans_definition():
     assert set(PLANS) == {"plus1", "plus4", "plus9"}
     assert PLANS["plus1"].extra_searches == 1
-    assert PLANS["plus4"].extra_searches == 4
-    assert PLANS["plus9"].extra_searches == 9
+    assert PLANS["plus4"].extra_searches == 5
+    assert PLANS["plus9"].extra_searches == 10
     assert PLAN_DURATION_DAYS == 30
 
 
 def test_plan_totals():
     for plan in PLANS.values():
-        assert plan.total_searches == plan.extra_searches + 1
+        assert plan.total_searches == plan.extra_searches
 
 
 # ------------------------- repository -------------------------

@@ -7,7 +7,12 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import Config
-from app.db.repo import BroadcastRepository, SearchRepository, UserSettingsRepository
+from app.db.repo import (
+    BroadcastRepository,
+    SearchRepository,
+    SubscriptionRepository,
+    UserSettingsRepository,
+)
 from app.i18n import get_text, resolve_lang
 from app.services.fetch_coordinator import FetchCoordinator
 from app.services.formatter import format_listing_message
@@ -128,6 +133,7 @@ class WatcherService:
         session = self.session_factory()
         try:
             repo = SearchRepository(session)
+            await self._enforce_limits(session, repo)
             searches = repo.get_active_searches()
             logger.info("Watcher: checking %d active search(es)", len(searches))
 
@@ -145,6 +151,43 @@ class WatcherService:
             await asyncio.gather(*(_check_one(s) for s in searches))
         finally:
             session.close()
+
+    async def _enforce_limits(self, session, repo: SearchRepository) -> None:
+        """Pause searches exceeding each user's current limit (trial/plan expiry)."""
+        try:
+            sub_repo = SubscriptionRepository(session)
+            by_user: dict[int, list] = {}
+            for s in repo.get_active_searches():
+                by_user.setdefault(s.user_id, []).append(s)
+            for user_id, items in by_user.items():
+                limit = sub_repo.active_search_limit(user_id)
+                if len(items) <= limit:
+                    continue
+                items.sort(key=lambda s: s.id)
+                excess = items[limit:]
+                for s in excess:
+                    repo.pause_search(s)
+                logger.info(
+                    "Watcher: paused %d search(es) of user %s over limit %d",
+                    len(excess), user_id, limit,
+                )
+                lang = self._resolve_user_lang(user_id)
+                kb = InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(
+                        text=get_text("btn_buy_more_searches", lang),
+                        callback_data="sub:show:",
+                    )
+                ]])
+                try:
+                    await self.bot.send_message(
+                        user_id,
+                        get_text("trial_expired_paused", lang, count=len(excess)),
+                        reply_markup=kb,
+                    )
+                except (TelegramForbiddenError, TelegramBadRequest):
+                    pass
+        except Exception:
+            logger.exception("Watcher: limit enforcement failed")
 
     def _resolve_user_lang(self, user_id: int) -> str:
         """Fetch user's preferred language from DB."""

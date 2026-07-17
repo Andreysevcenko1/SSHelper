@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.bot.keyboards.main import main_menu_kb
 from app.bot.utils import try_delete_message
-from app.db.repo import ReferralRepository, UserSettingsRepository
+from app.db.repo import ReferralRepository, TrialRepository, UserSettingsRepository
 from app.i18n import get_text, resolve_lang
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,14 @@ async def cmd_start(
     user_id = message.from_user.id if message.from_user else None
     tg_lang = message.from_user.language_code if message.from_user else None
     lang = get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
+
+    # Start the free-trial clock at first contact.
+    if user_id:
+        session = session_factory()
+        try:
+            TrialRepository(session).get_or_start(user_id)
+        finally:
+            session.close()
 
     # Referral deep link: /start ref_<referrer_id>
     args = (command.args or "").strip()

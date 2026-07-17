@@ -66,13 +66,23 @@ class Subscription(Base):
 
 
 class Referral(Base):
-    """Credited invite: one row per invited (new) user; referrer gets +1 slot."""
+    """Credited invite: one row per invited (new) user; referrer gets +1 slot for 30 days."""
 
     __tablename__ = "referrals"
 
     invitee_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     referrer_id: Mapped[int] = mapped_column(BigInteger, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class Trial(Base):
+    """Free trial: 1 search slot for 30 days from the user's first contact."""
+
+    __tablename__ = "trials"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
 class BroadcastSent(Base):

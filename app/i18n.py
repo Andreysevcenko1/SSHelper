@@ -83,6 +83,21 @@ _T: dict[str, dict[str, str]] = {
         "ru": "У вас бесплатный план: 1 активный поиск.",
         "en": "You are on the free plan: 1 active search.",
     },
+    "sub_status_trial": {
+        "lv": "🎁 Bezmaksas izmēģinājums: 1 aktīvs meklējums.\nAtlikušas dienas: {days}",
+        "ru": "🎁 Бесплатный пробный период: 1 активный поиск.\nОсталось дней: {days}",
+        "en": "🎁 Free trial: 1 active search.\nDays left: {days}",
+    },
+    "sub_status_expired": {
+        "lv": "⌛ Bezmaksas periods beidzies. Lai turpinātu, izvēlieties tarifu vai uzaiciniet draugu.",
+        "ru": "⌛ Бесплатный период закончился. Чтобы продолжить, выберите тариф или пригласите друга.",
+        "en": "⌛ Your free trial has ended. Choose a plan or invite a friend to continue.",
+    },
+    "trial_expired_paused": {
+        "lv": "⌛ Bezmaksas periods beidzies — {count} meklējums(-i) apturēts(-i).\nIzvēlieties tarifu vai uzaiciniet draugu (+1 vieta uz 30 dienām), lai atsāktu.",
+        "ru": "⌛ Бесплатный период закончился — приостановлено поисков: {count}.\nВыберите тариф или пригласите друга (+1 слот на 30 дней), чтобы возобновить.",
+        "en": "⌛ Your free trial has ended — {count} search(es) paused.\nChoose a plan or invite a friend (+1 slot for 30 days) to resume.",
+    },
     "sub_status_active": {
         "lv": "Aktīvais plāns: {plan}\nAtlikušas dienas: {days}",
         "ru": "Активный тариф: {plan}\nОсталось дней: {days}",
@@ -99,19 +114,19 @@ _T: dict[str, dict[str, str]] = {
         "en": "Choose a plan (30 days; a new plan replaces the current one):",
     },
     "sub_plan_plus1": {
-        "lv": "+1 meklējums — {eur} (⭐{stars})",
-        "ru": "+1 поиск — {eur} (⭐{stars})",
-        "en": "+1 search — {eur} (⭐{stars})",
+        "lv": "1 meklējums — {eur} (⭐{stars})",
+        "ru": "1 поиск — {eur} (⭐{stars})",
+        "en": "1 search — {eur} (⭐{stars})",
     },
     "sub_plan_plus4": {
-        "lv": "+4 meklējumi — {eur} (⭐{stars})",
-        "ru": "+4 поиска — {eur} (⭐{stars})",
-        "en": "+4 searches — {eur} (⭐{stars})",
+        "lv": "5 meklējumi — {eur} (⭐{stars})",
+        "ru": "5 поисков — {eur} (⭐{stars})",
+        "en": "5 searches — {eur} (⭐{stars})",
     },
     "sub_plan_plus9": {
-        "lv": "+9 meklējumi — {eur} (⭐{stars})",
-        "ru": "+9 поисков — {eur} (⭐{stars})",
-        "en": "+9 searches — {eur} (⭐{stars})",
+        "lv": "10 meklējumi — {eur} (⭐{stars})",
+        "ru": "10 поисков — {eur} (⭐{stars})",
+        "en": "10 searches — {eur} (⭐{stars})",
     },
     "sub_invoice_title": {
         "lv": "Abonements: {total} aktīvi meklējumi",
@@ -119,42 +134,42 @@ _T: dict[str, dict[str, str]] = {
         "en": "Subscription: {total} active searches",
     },
     "sub_invoice_desc": {
-        "lv": "+{extra} papildu meklējumi (kopā {total}) uz {days} dienām. Cena: {eur}.",
-        "ru": "+{extra} доп. поисков (всего {total}) на {days} дней. Цена: {eur}.",
-        "en": "+{extra} extra searches ({total} total) for {days} days. Price: {eur}.",
+        "lv": "{total} aktīvi meklējumi uz {days} dienām. Cena: {eur}.",
+        "ru": "{total} активных поисков на {days} дней. Цена: {eur}.",
+        "en": "{total} active searches for {days} days. Price: {eur}.",
     },
     "btn_invite_friend": {
-        "lv": "🎁 Uzaicini draugu (+1 meklējums)",
-        "ru": "🎁 Пригласить друга (+1 поиск)",
-        "en": "🎁 Invite a friend (+1 search)",
+        "lv": "🎁 Uzaicini draugu (+1 meklējums uz 30 dienām)",
+        "ru": "🎁 Пригласить друга (+1 поиск на 30 дней)",
+        "en": "🎁 Invite a friend (+1 search for 30 days)",
     },
     "ref_screen": {
         "lv": (
-            "🎁 <b>Uzaicini draugu — saņem +1 meklējumu!</b>\n\n"
+            "🎁 <b>Uzaicini draugu — saņem +1 meklējumu uz 30 dienām!</b>\n\n"
             "Par katru draugu, kurš pirmo reizi palaiž botu caur tavu saiti, "
-            "tu saņem +1 pastāvīgu meklēšanas vietu (līdz +{max}).\n\n"
+            "tu saņem +1 meklēšanas vietu uz 30 dienām (līdz +{max}).\n\n"
             "Tava saite:\n{link}\n\n"
-            "Uzaicināti draugi: {count} no {max}"
+            "Aktīvie draugu bonusi: {count} no {max}"
         ),
         "ru": (
-            "🎁 <b>Пригласи друга — получи +1 поиск!</b>\n\n"
+            "🎁 <b>Пригласи друга — получи +1 поиск на 30 дней!</b>\n\n"
             "За каждого друга, который впервые запустит бота по твоей ссылке, "
-            "ты получаешь +1 постоянный слот поиска (до +{max}).\n\n"
+            "ты получаешь +1 слот поиска на 30 дней (до +{max}).\n\n"
             "Твоя ссылка:\n{link}\n\n"
-            "Приглашено друзей: {count} из {max}"
+            "Активные бонусы за друзей: {count} из {max}"
         ),
         "en": (
-            "🎁 <b>Invite a friend — get +1 search!</b>\n\n"
+            "🎁 <b>Invite a friend — get +1 search for 30 days!</b>\n\n"
             "For every friend who starts the bot for the first time via your link, "
-            "you get +1 permanent search slot (up to +{max}).\n\n"
+            "you get +1 search slot for 30 days (up to +{max}).\n\n"
             "Your link:\n{link}\n\n"
-            "Friends invited: {count} of {max}"
+            "Active friend bonuses: {count} of {max}"
         ),
     },
     "ref_credited": {
-        "lv": "🎁 Tavs draugs pievienojās! Tev tagad ir +1 meklēšanas vieta.",
-        "ru": "🎁 Твой друг присоединился! У тебя теперь +1 слот поиска.",
-        "en": "🎁 Your friend joined! You now have +1 search slot.",
+        "lv": "🎁 Tavs draugs pievienojās! Tev ir +1 meklēšanas vieta uz 30 dienām.",
+        "ru": "🎁 Твой друг присоединился! У тебя +1 слот поиска на 30 дней.",
+        "en": "🎁 Your friend joined! You have +1 search slot for 30 days.",
     },
     "sub_paid_ok": {
         "lv": "✅ Apmaksa saņemta! Tagad jums pieejami {total} aktīvi meklējumi uz {days} dienām.",

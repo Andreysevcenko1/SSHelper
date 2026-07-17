@@ -18,7 +18,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.bot.callbacks import MenuCB, SubCB
 from app.bot.handlers.common import get_user_lang
 from app.config import Config
-from app.db.repo import ReferralRepository, SearchRepository, SubscriptionRepository
+from app.db.repo import (
+    ReferralRepository,
+    SearchRepository,
+    SubscriptionRepository,
+    TrialRepository,
+)
 from app.i18n import get_text
 from app.services.plans import PLAN_DURATION_DAYS, PLANS
 
@@ -49,6 +54,9 @@ def _status_text(user_id: int, lang: str, session_factory: sessionmaker[Session]
         sub = sub_repo.get_active(user_id)
         limit = sub_repo.active_search_limit(user_id)
         active = SearchRepository(session).count_active_for_user(user_id)
+        trial_repo = TrialRepository(session)
+        trial_active = trial_repo.is_active(user_id)
+        trial_days = trial_repo.days_left(user_id)
     finally:
         session.close()
 
@@ -62,8 +70,10 @@ def _status_text(user_id: int, lang: str, session_factory: sessionmaker[Session]
             if plan else sub.plan
         )
         lines.append(get_text("sub_status_active", lang, plan=plan_name, days=days_left))
+    elif trial_active:
+        lines.append(get_text("sub_status_trial", lang, days=trial_days))
     else:
-        lines.append(get_text("sub_status_free", lang))
+        lines.append(get_text("sub_status_expired", lang))
     lines.append(get_text("sub_usage", lang, active=active, limit=limit))
     lines.append("")
     lines.append(get_text("sub_pick_plan", lang))
