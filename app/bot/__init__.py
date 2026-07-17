@@ -1,6 +1,7 @@
 from aiogram import Router
 
 from app.bot.handlers.common import router as common_router
+from app.bot.handlers.service_cleanup import router as service_cleanup_router
 from app.bot.handlers.searches import router as searches_router
 from app.bot.handlers.add_search import router as add_search_router
 from app.bot.handlers.filter_cmds import router as filter_cmds_router
@@ -12,6 +13,8 @@ from app.bot.handlers.subscription import router as subscription_router
 
 def get_main_router() -> Router:
     router = Router()
+    # Service-message cleanup first so joins/leaves are deleted immediately
+    router.include_router(service_cleanup_router)
     # Command handlers first so they take priority over FSM text fallbacks
     router.include_router(common_router)
     router.include_router(lang_router)
