@@ -65,6 +65,16 @@ class Subscription(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
+class Referral(Base):
+    """Credited invite: one row per invited (new) user; referrer gets +1 slot."""
+
+    __tablename__ = "referrals"
+
+    invitee_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    referrer_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class BroadcastSent(Base):
     """Tracks which listing external_ids have already been broadcast to the group.
 

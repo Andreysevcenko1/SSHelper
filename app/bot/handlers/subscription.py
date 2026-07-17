@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.bot.callbacks import MenuCB, SubCB
 from app.bot.handlers.common import get_user_lang
 from app.config import Config
-from app.db.repo import SearchRepository, SubscriptionRepository
+from app.db.repo import ReferralRepository, SearchRepository, SubscriptionRepository
 from app.i18n import get_text
 from app.services.plans import PLAN_DURATION_DAYS, PLANS
 
@@ -36,6 +36,7 @@ def subscription_kb(lang: str) -> InlineKeyboardMarkup:
             text=get_text(plan.label_i18n_key, lang, eur=plan.price_eur, stars=plan.price_stars),
             callback_data=SubCB(action="buy", plan=plan.plan_id),
         )
+    b.button(text=get_text("btn_invite_friend", lang), callback_data=SubCB(action="ref"))
     b.button(text=get_text("btn_back_to_menu", lang), callback_data=MenuCB(action="main"))
     b.adjust(1)
     return b.as_markup()
@@ -85,6 +86,41 @@ async def cb_sub_show(
         await callback.message.edit_text(
             _status_text(user_id, lang, session_factory),
             reply_markup=subscription_kb(lang),
+        )
+    except TelegramBadRequest:
+        pass
+    await callback.answer()
+
+
+@router.callback_query(SubCB.filter(F.action == "ref"))
+async def cb_sub_ref(
+    callback: CallbackQuery,
+    callback_data: SubCB,
+    session_factory: sessionmaker[Session],
+) -> None:
+    user_id = callback.from_user.id if callback.from_user else None
+    tg_lang = callback.from_user.language_code if callback.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
+    if user_id is None:
+        await callback.answer()
+        return
+    me = await callback.bot.get_me()
+    link = f"https://t.me/{me.username}?start=ref_{user_id}"
+    session = session_factory()
+    try:
+        ref_repo = ReferralRepository(session)
+        bonus = ref_repo.bonus_slots(user_id)
+    finally:
+        session.close()
+    text = get_text(
+        "ref_screen", lang, link=link, count=bonus, max=ReferralRepository.MAX_BONUS
+    )
+    b = InlineKeyboardBuilder()
+    b.button(text=get_text("btn_back_to_menu", lang), callback_data=MenuCB(action="main"))
+    b.adjust(1)
+    try:
+        await callback.message.edit_text(
+            text, reply_markup=b.as_markup(), disable_web_page_preview=True
         )
     except TelegramBadRequest:
         pass

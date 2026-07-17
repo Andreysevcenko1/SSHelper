@@ -123,6 +123,39 @@ _T: dict[str, dict[str, str]] = {
         "ru": "+{extra} доп. поисков (всего {total}) на {days} дней. Цена: {eur}.",
         "en": "+{extra} extra searches ({total} total) for {days} days. Price: {eur}.",
     },
+    "btn_invite_friend": {
+        "lv": "🎁 Uzaicini draugu (+1 meklējums)",
+        "ru": "🎁 Пригласить друга (+1 поиск)",
+        "en": "🎁 Invite a friend (+1 search)",
+    },
+    "ref_screen": {
+        "lv": (
+            "🎁 <b>Uzaicini draugu — saņem +1 meklējumu!</b>\n\n"
+            "Par katru draugu, kurš pirmo reizi palaiž botu caur tavu saiti, "
+            "tu saņem +1 pastāvīgu meklēšanas vietu (līdz +{max}).\n\n"
+            "Tava saite:\n{link}\n\n"
+            "Uzaicināti draugi: {count} no {max}"
+        ),
+        "ru": (
+            "🎁 <b>Пригласи друга — получи +1 поиск!</b>\n\n"
+            "За каждого друга, который впервые запустит бота по твоей ссылке, "
+            "ты получаешь +1 постоянный слот поиска (до +{max}).\n\n"
+            "Твоя ссылка:\n{link}\n\n"
+            "Приглашено друзей: {count} из {max}"
+        ),
+        "en": (
+            "🎁 <b>Invite a friend — get +1 search!</b>\n\n"
+            "For every friend who starts the bot for the first time via your link, "
+            "you get +1 permanent search slot (up to +{max}).\n\n"
+            "Your link:\n{link}\n\n"
+            "Friends invited: {count} of {max}"
+        ),
+    },
+    "ref_credited": {
+        "lv": "🎁 Tavs draugs pievienojās! Tev tagad ir +1 meklēšanas vieta.",
+        "ru": "🎁 Твой друг присоединился! У тебя теперь +1 слот поиска.",
+        "en": "🎁 Your friend joined! You now have +1 search slot.",
+    },
     "sub_paid_ok": {
         "lv": "✅ Apmaksa saņemta! Tagad jums pieejami {total} aktīvi meklējumi uz {days} dienām.",
         "ru": "✅ Оплата получена! Теперь вам доступно {total} активных поисков на {days} дней.",
