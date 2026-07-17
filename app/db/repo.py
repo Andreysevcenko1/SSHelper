@@ -5,7 +5,14 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.db.models import BroadcastSent, GroupSearch, Search, Subscription, UserSettings
+from app.db.models import (
+    BroadcastSent,
+    GroupSearch,
+    Referral,
+    Search,
+    Subscription,
+    UserSettings,
+)
 from app.services.filters import (
     build_effective_url,
     filters_from_json,
@@ -321,4 +328,47 @@ class SubscriptionRepository:
 
     def active_search_limit(self, user_id: int) -> int:
         sub = self.get_active(user_id)
-        return self.FREE_LIMIT + (sub.extra_searches if sub else 0)
+        referral_bonus = ReferralRepository(self.session).bonus_slots(user_id)
+        return self.FREE_LIMIT + (sub.extra_searches if sub else 0) + referral_bonus
+
+
+class ReferralRepository:
+    """Invite-a-friend bonus slots: +1 permanent slot per credited invitee."""
+
+    MAX_BONUS = 10  # anti-abuse cap on referral slots
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def bonus_slots(self, referrer_id: int) -> int:
+        count = (
+            self.session.query(Referral)
+            .filter(Referral.referrer_id == referrer_id)
+            .count()
+        )
+        return min(count, self.MAX_BONUS)
+
+    def is_known_user(self, user_id: int) -> bool:
+        """A user is 'known' if they have settings, searches, or were already referred."""
+        if self.session.get(UserSettings, user_id) is not None:
+            return True
+        if self.session.get(Referral, user_id) is not None:
+            return True
+        has_search = (
+            self.session.query(Search.id).filter(Search.user_id == user_id).first()
+        )
+        return has_search is not None
+
+    def credit(self, referrer_id: int, invitee_id: int) -> bool:
+        """Credit *referrer_id* for inviting *invitee_id*. Returns True if credited."""
+        if referrer_id == invitee_id:
+            return False
+        if self.is_known_user(invitee_id):
+            return False
+        try:
+            self.session.add(Referral(invitee_id=invitee_id, referrer_id=referrer_id))
+            self.session.commit()
+            return True
+        except IntegrityError:
+            self.session.rollback()
+            return False
