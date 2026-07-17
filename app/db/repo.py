@@ -11,6 +11,7 @@ from app.db.models import (
     Referral,
     Search,
     Subscription,
+    Trial,
     UserSettings,
 )
 from app.services.filters import (
@@ -294,9 +295,7 @@ class BroadcastRepository:
 
 
 class SubscriptionRepository:
-    """Paid extra-search-slot plans (one row per user, replace-on-purchase)."""
-
-    FREE_LIMIT = 1
+    """Paid search-slot plans (one row per user, replace-on-purchase)."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -327,23 +326,61 @@ class SubscriptionRepository:
         return sub
 
     def active_search_limit(self, user_id: int) -> int:
+        """Total allowed active searches: trial (1) or paid plan slots + referral bonus."""
+        base = 1 if TrialRepository(self.session).is_active(user_id) else 0
         sub = self.get_active(user_id)
         referral_bonus = ReferralRepository(self.session).bonus_slots(user_id)
-        return self.FREE_LIMIT + (sub.extra_searches if sub else 0) + referral_bonus
+        return base + (sub.extra_searches if sub else 0) + referral_bonus
+
+
+class TrialRepository:
+    """30-day free trial (1 search) starting at the user's first contact."""
+
+    TRIAL_DAYS = 30
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get_or_start(self, user_id: int) -> Trial:
+        trial = self.session.get(Trial, user_id)
+        if trial is None:
+            now = datetime.utcnow()
+            trial = Trial(
+                user_id=user_id,
+                started_at=now,
+                expires_at=now + timedelta(days=self.TRIAL_DAYS),
+            )
+            self.session.add(trial)
+            try:
+                self.session.commit()
+            except IntegrityError:
+                self.session.rollback()
+                trial = self.session.get(Trial, user_id)
+        return trial
+
+    def is_active(self, user_id: int) -> bool:
+        trial = self.get_or_start(user_id)
+        return trial.expires_at > datetime.utcnow()
+
+    def days_left(self, user_id: int) -> int:
+        trial = self.get_or_start(user_id)
+        return max(0, (trial.expires_at - datetime.utcnow()).days)
 
 
 class ReferralRepository:
-    """Invite-a-friend bonus slots: +1 permanent slot per credited invitee."""
+    """Invite-a-friend bonus slots: +1 slot for 30 days per credited invitee."""
 
     MAX_BONUS = 10  # anti-abuse cap on referral slots
+    BONUS_DAYS = 30
 
     def __init__(self, session: Session) -> None:
         self.session = session
 
     def bonus_slots(self, referrer_id: int) -> int:
+        cutoff = datetime.utcnow() - timedelta(days=self.BONUS_DAYS)
         count = (
             self.session.query(Referral)
-            .filter(Referral.referrer_id == referrer_id)
+            .filter(Referral.referrer_id == referrer_id, Referral.created_at > cutoff)
             .count()
         )
         return min(count, self.MAX_BONUS)

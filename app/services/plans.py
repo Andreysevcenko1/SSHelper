@@ -1,7 +1,8 @@
 """Paid subscription plan definitions (Telegram Stars pricing).
 
-The free tier always allows 1 active search. Plans add extra slots for
-30 days; buying a new plan replaces the current one immediately.
+New users get a 30-day free trial with 1 active search. After the trial,
+searches require a paid plan (plans give the full slot count, not extras).
+Referral bonus slots (+1 per friend, 30 days each) stack on top.
 """
 
 from __future__ import annotations
@@ -20,9 +21,10 @@ class Plan:
 
 
 PLANS: dict[str, Plan] = {
-    "plus1": Plan("plus1", 1, 2, "2,19 €", 100, "sub_plan_plus1"),
-    "plus4": Plan("plus4", 4, 5, "5,39 €", 250, "sub_plan_plus4"),
-    "plus9": Plan("plus9", 9, 10, "10,90 €", 500, "sub_plan_plus9"),
+    "plus1": Plan("plus1", 1, 1, "2,19 €", 100, "sub_plan_plus1"),
+    "plus4": Plan("plus4", 5, 5, "5,39 €", 250, "sub_plan_plus4"),
+    "plus9": Plan("plus9", 10, 10, "10,90 €", 500, "sub_plan_plus9"),
 }
 
 PLAN_DURATION_DAYS = 30
+TRIAL_DAYS = 30
