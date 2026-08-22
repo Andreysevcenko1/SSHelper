@@ -67,6 +67,8 @@ def test_load_config_broadcast_enabled_all_vars(monkeypatch):
     monkeypatch.setenv("THREAD_SELL_RIGA", "20")
     monkeypatch.setenv("THREAD_AUTO_RIGA", "30")
     monkeypatch.setenv("THREAD_OTHER_CITIES", "40")
+    monkeypatch.setenv("THREAD_WORK_RIGA", "50")
+    monkeypatch.setenv("THREAD_FLEA_MARKET", "60")
     cfg = load_config()
     assert cfg.broadcast_enabled is True
     assert cfg.broadcast_chat_id == -1001234567890
@@ -74,6 +76,8 @@ def test_load_config_broadcast_enabled_all_vars(monkeypatch):
     assert cfg.thread_sell_riga == 20
     assert cfg.thread_auto_riga == 30
     assert cfg.thread_other_cities == 40
+    assert cfg.thread_work_riga == 50
+    assert cfg.thread_flea_market == 60
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -116,7 +120,7 @@ def test_is_riga_none():
 # _detect_topic routing
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _make_config(ire=10, sell=20, auto=30, other=40) -> Config:
+def _make_config(ire=10, sell=20, auto=30, other=40, work=50, flea=60) -> Config:
     return Config(
         telegram_bot_token="fake",
         broadcast_enabled=True,
@@ -124,6 +128,8 @@ def _make_config(ire=10, sell=20, auto=30, other=40) -> Config:
         thread_ire_riga=ire,
         thread_sell_riga=sell,
         thread_auto_riga=auto,
+        thread_work_riga=work,
+        thread_flea_market=flea,
         thread_other_cities=other,
     )
 
@@ -174,3 +180,17 @@ def test_route_riga_url_no_city():
     listing = _listing(city=None)
     url = "https://ss.lv/lv/transport/cars/riga/"
     assert _detect_topic(url, listing, cfg) == 30
+
+
+def test_route_riga_work():
+    cfg = _make_config()
+    listing = _listing(city="Rīga")
+    url = "https://ss.lv/lv/work/are-required/riga/"
+    assert _detect_topic(url, listing, cfg) == 50
+
+
+def test_route_flea_market():
+    cfg = _make_config()
+    listing = _listing(city="Jūrmala")
+    url = "https://ss.lv/lv/market/"
+    assert _detect_topic(url, listing, cfg) == 60

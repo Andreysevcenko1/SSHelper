@@ -18,6 +18,8 @@ class Config:
     thread_sell_riga: Optional[int] = None
     thread_auto_riga: Optional[int] = None
     thread_other_cities: Optional[int] = None
+    thread_work_riga: Optional[int] = None
+    thread_flea_market: Optional[int] = None
     # Admin user IDs allowed to manage group searches (comma-separated in env)
     admin_user_ids: list[int] = field(default_factory=list)
 
@@ -74,6 +76,8 @@ def load_config() -> Config:
     thread_sell_riga = _parse_optional_int(os.getenv("THREAD_SELL_RIGA", ""), "THREAD_SELL_RIGA")
     thread_auto_riga = _parse_optional_int(os.getenv("THREAD_AUTO_RIGA", ""), "THREAD_AUTO_RIGA")
     thread_other_cities = _parse_optional_int(os.getenv("THREAD_OTHER_CITIES", ""), "THREAD_OTHER_CITIES")
+    thread_work_riga = _parse_optional_int(os.getenv("THREAD_WORK_RIGA", ""), "THREAD_WORK_RIGA")
+    thread_flea_market = _parse_optional_int(os.getenv("THREAD_FLEA_MARKET", ""), "THREAD_FLEA_MARKET")
 
     if broadcast_enabled:
         missing = []
@@ -103,5 +107,7 @@ def load_config() -> Config:
         thread_sell_riga=thread_sell_riga,
         thread_auto_riga=thread_auto_riga,
         thread_other_cities=thread_other_cities,
+        thread_work_riga=thread_work_riga,
+        thread_flea_market=thread_flea_market,
         admin_user_ids=admin_user_ids,
     )

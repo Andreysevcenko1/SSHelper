@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import unicodedata
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
@@ -46,6 +47,12 @@ _SALE_KEYWORDS = {
 _AUTO_KEYWORDS = {
     "auto", "cars", "transport", "masinas", "automobili",
 }
+_WORK_KEYWORDS = {
+    "work", "job", "jobs", "darbs", "vakance", "vakances", "vacancy", "vacancies",
+}
+_FLEA_KEYWORDS = {
+    "market", "flea", "second-hand", "secondhand", "baraholka",
+}
 _RIGA_KEYWORDS = {"riga"}
 
 
@@ -58,6 +65,13 @@ def _is_riga(city: str | None, url: str) -> bool:
     return any(kw in src for src in sources for kw in _RIGA_KEYWORDS)
 
 
+def _contains_keyword(text: str, keyword: str) -> bool:
+    """Keyword matcher that avoids accidental substring hits like 'required' -> 'ire'."""
+    if any(ch in keyword for ch in ("_", "-", "/")):
+        return keyword in text
+    return re.search(rf"(?<![a-z0-9]){re.escape(keyword)}(?![a-z0-9])", text) is not None
+
+
 def _detect_topic(search_url: str, listing: "Listing", config: Config) -> int | None:
     """Return the Telegram message_thread_id for *listing* based on routing rules.
 
@@ -65,7 +79,9 @@ def _detect_topic(search_url: str, listing: "Listing", config: Config) -> int | 
       1. Rīga + apartment rent  → THREAD_IRE_RIGA
       2. Rīga + apartment sale  → THREAD_SELL_RIGA
       3. Rīga + auto            → THREAD_AUTO_RIGA
-      4. everything else        → THREAD_OTHER_CITIES
+      4. Rīga + work            → THREAD_WORK_RIGA (if configured)
+      5. flea-market categories → THREAD_FLEA_MARKET (if configured)
+      6. everything else        → THREAD_OTHER_CITIES
     """
     url_norm = _normalize(search_url)
     title_norm = _normalize(listing.title or "")
@@ -73,9 +89,11 @@ def _detect_topic(search_url: str, listing: "Listing", config: Config) -> int | 
 
     is_riga = _is_riga(listing.city, search_url)
 
-    is_rent = any(kw in combined for kw in _RENT_KEYWORDS)
-    is_sale = any(kw in combined for kw in _SALE_KEYWORDS)
-    is_auto = any(kw in combined for kw in _AUTO_KEYWORDS)
+    is_rent = any(_contains_keyword(combined, kw) for kw in _RENT_KEYWORDS)
+    is_sale = any(_contains_keyword(combined, kw) for kw in _SALE_KEYWORDS)
+    is_auto = any(_contains_keyword(combined, kw) for kw in _AUTO_KEYWORDS)
+    is_work = any(_contains_keyword(combined, kw) for kw in _WORK_KEYWORDS)
+    is_flea = any(_contains_keyword(combined, kw) for kw in _FLEA_KEYWORDS)
 
     if is_riga and is_rent:
         thread_id = config.thread_ire_riga
@@ -86,6 +104,12 @@ def _detect_topic(search_url: str, listing: "Listing", config: Config) -> int | 
     elif is_riga and is_auto:
         thread_id = config.thread_auto_riga
         reason = "Rīga + auto"
+    elif is_riga and is_work and config.thread_work_riga is not None:
+        thread_id = config.thread_work_riga
+        reason = "Rīga + work"
+    elif is_flea and config.thread_flea_market is not None:
+        thread_id = config.thread_flea_market
+        reason = "flea market"
     elif is_auto:
         # "Citi pilsētu sludinājumi" topic is flats-only: never route cars there.
         thread_id = None
@@ -119,11 +143,13 @@ class WatcherService:
         if config and config.broadcast_enabled:
             logger.info(
                 "Broadcast enabled: chat_id=%s threads=(ire_riga=%s, sell_riga=%s, "
-                "auto_riga=%s, other=%s)",
+                "auto_riga=%s, work_riga=%s, flea_market=%s, other=%s)",
                 config.broadcast_chat_id,
                 config.thread_ire_riga,
                 config.thread_sell_riga,
                 config.thread_auto_riga,
+                config.thread_work_riga,
+                config.thread_flea_market,
                 config.thread_other_cities,
             )
         else:

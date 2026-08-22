@@ -7,10 +7,11 @@ Commands:
   /gresume <ID>                     — resume a group search
   /gdelete <ID>                     — delete a group search
 
-route_key must be one of: ire_riga, sell_riga, auto_riga, other
+route_key must be one of: ire_riga, sell_riga, auto_riga, work_riga, flea_market, other
 """
 
 import logging
+from urllib.parse import urlparse, urlunparse
 
 from aiogram import Router
 from aiogram.filters import Command
@@ -23,7 +24,31 @@ from app.db.repo import GroupSearchRepository
 logger = logging.getLogger(__name__)
 router = Router()
 
-_VALID_ROUTE_KEYS = {"ire_riga", "sell_riga", "auto_riga", "other"}
+_VALID_ROUTE_KEYS = {"ire_riga", "sell_riga", "auto_riga", "work_riga", "flea_market", "other"}
+
+
+def _canonical_group_url(url: str, route_key: str) -> str:
+    """Normalize known SS.lv category URLs to listing pages with rows.
+
+    SS.lv section roots like ``.../riga/hand_over/`` or ``.../riga/sell/``
+    render district categories and contain no listing rows (``tr_*``), so
+    watchers get 0 results. For those known flats routes we force ``/all/``.
+    """
+    raw = (url or "").strip()
+    if not raw:
+        return raw
+
+    parsed = urlparse(raw)
+    path = parsed.path or "/"
+    if not path.endswith("/"):
+        path += "/"
+
+    if route_key == "ire_riga" and "/real-estate/flats/riga/hand_over/" in path:
+        path = path.replace("/real-estate/flats/riga/hand_over/", "/real-estate/flats/riga/all/hand_over/")
+    elif route_key == "sell_riga" and "/real-estate/flats/riga/sell/" in path:
+        path = path.replace("/real-estate/flats/riga/sell/", "/real-estate/flats/riga/all/sell/")
+
+    return urlunparse(parsed._replace(path=path))
 
 
 def _is_admin(message: Message, config: Config) -> bool:
@@ -61,7 +86,7 @@ async def cmd_gadd(
         )
         return
 
-    url = parts[2].strip()
+    url = _canonical_group_url(parts[2].strip(), route_key)
     title = parts[3].strip() if len(parts) > 3 else url
 
     session = session_factory()

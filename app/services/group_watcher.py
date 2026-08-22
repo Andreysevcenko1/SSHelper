@@ -23,7 +23,7 @@ from app.services.ss_parser import Listing, SSParser
 
 logger = logging.getLogger(__name__)
 
-_VALID_ROUTE_KEYS = {"ire_riga", "sell_riga", "auto_riga", "other"}
+_VALID_ROUTE_KEYS = {"ire_riga", "sell_riga", "auto_riga", "work_riga", "flea_market", "other"}
 
 
 def _thread_id_for_route_key(route_key: str, config: Config) -> int | None:
@@ -36,6 +36,8 @@ def _thread_id_for_route_key(route_key: str, config: Config) -> int | None:
         "ire_riga": config.thread_ire_riga,
         "sell_riga": config.thread_sell_riga,
         "auto_riga": config.thread_auto_riga,
+        "work_riga": config.thread_work_riga,
+        "flea_market": config.thread_flea_market,
         "other": config.thread_other_cities,
     }
     return mapping.get(route_key, config.thread_other_cities)
@@ -71,6 +73,12 @@ class GroupWatcherService:
                 try:
                     fetch_url = search.effective_url or search.url
                     listings = await self.coordinator.fetch_listings(fetch_url, limit=10)
+                    logger.info(
+                        "GroupWatcher: group search #%d fetched %d listing(s) from %s",
+                        search.id,
+                        len(listings),
+                        fetch_url,
+                    )
                     await self._process_listings(repo=repo, search=search, listings=listings)
                 except Exception:
                     logger.exception(
@@ -89,7 +97,7 @@ class GroupWatcherService:
         listings: list[Listing],
     ) -> None:
         if not listings:
-            logger.debug("GroupWatcher: no listings for group search #%d", search.id)
+            logger.warning("GroupWatcher: no listings for group search #%d", search.id)
             return
 
         newest = listings[0]
