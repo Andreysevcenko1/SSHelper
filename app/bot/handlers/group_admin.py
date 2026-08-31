@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 _VALID_ROUTE_KEYS = {"ire_riga", "sell_riga", "auto_riga", "work_riga", "flea_market", "other"}
+_MAX_TELEGRAM_TEXT = 3900
 
 
 def _canonical_group_url(url: str, route_key: str) -> str:
@@ -133,7 +134,21 @@ async def cmd_glist(
             f"  🔗 {s.effective_url or s.url}"
         )
 
-    await message.answer("\n\n".join(lines), parse_mode="HTML")
+    # Send in chunks to avoid exceeding 4096 char limit
+    # Start fresh chunk with each limit check
+    text = "\n\n".join(lines)
+    
+    if len(text) <= 4096:
+        await message.answer(text, parse_mode="HTML")
+        return
+    
+    # Split by items (every 20 items per message)
+    items_per_msg = 20
+    await message.answer(lines[0], parse_mode="HTML")  # Send header separately
+    
+    for i in range(1, len(lines), items_per_msg):
+        chunk = lines[i:i + items_per_msg]
+        await message.answer("\n\n".join(chunk), parse_mode="HTML")
 
 
 @router.message(Command("gpause"))
@@ -237,3 +252,21 @@ def _parse_id(message: Message) -> int | None:
         return int(parts[1].strip())
     except ValueError:
         return None
+
+
+async def _answer_chunks(message: Message, blocks: list[str]) -> None:
+    """Send long admin lists in multiple Telegram messages."""
+    chunk_parts: list[str] = []
+    chunk_len = 0
+    for block in blocks:
+        add_len = len(block) + (2 if chunk_parts else 0)
+        if chunk_parts and chunk_len + add_len > _MAX_TELEGRAM_TEXT:
+            await message.answer("\n\n".join(chunk_parts), parse_mode="HTML")
+            chunk_parts = [block]
+            chunk_len = len(block)
+            continue
+        chunk_parts.append(block)
+        chunk_len += add_len
+
+    if chunk_parts:
+        await message.answer("\n\n".join(chunk_parts), parse_mode="HTML")
