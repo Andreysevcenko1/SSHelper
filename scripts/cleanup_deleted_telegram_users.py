@@ -10,9 +10,13 @@ import argparse
 import asyncio
 import getpass
 import os
+import sys
+from pathlib import Path
 
 from telethon import TelegramClient
 from telethon.errors import ChatAdminRequiredError, FloodWaitError
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import load_config
 
