@@ -21,17 +21,33 @@ _T: dict[str, dict[str, str]] = {
     # ------------------------------------------------------------------ #
     "welcome": {
         "lv": (
-            "👋 Sveiki! Es esmu <b>SSHelper</b> — bots SS.lv sludinājumu "
-            "uzraudzībai.\n\n"
-            "Izmantojiet pogas zemāk, lai pārvaldītu savus meklējumus:"
+            "👋 Sveiki! Es esmu <b>SSHelper</b> — bots SS.lv sludinājumu uzraudzībai.\n\n"
+            "Atsūtiet man SS.lv meklēšanas saiti vai izmantojiet pogas zemāk:"
         ),
         "ru": (
             "👋 Привет! Я <b>SSHelper</b> — бот для мониторинга объявлений на SS.lv.\n\n"
-            "Используйте кнопки ниже для управления поисками:"
+            "Отправьте мне ссылку на поиск SS.lv или используйте кнопки ниже:"
         ),
         "en": (
             "👋 Hello! I am <b>SSHelper</b> — a bot for monitoring listings on SS.lv.\n\n"
-            "Use the buttons below to manage your searches:"
+            "Send me an SS.lv search link or use the buttons below:"
+        ),
+    },
+    "dm_fallback_prompt": {
+        "lv": (
+            "👋 <b>Es esmu gatavs pieņemt SS.lv saites!</b>\n\n"
+            "Nosūtiet man SS.lv meklēšanas lapas vai kategorijas saiti (piemēram, dzīvokļi vai auto).\n\n"
+            "Vai izmantojiet izvēlni zemāk:"
+        ),
+        "ru": (
+            "👋 <b>Я готов принимать ссылки на SS.lv!</b>\n\n"
+            "Просто отправьте мне ссылку на категорию или поиск SS.lv (например, квартиры или авто).\n\n"
+            "Или используйте меню ниже:"
+        ),
+        "en": (
+            "👋 <b>I am ready to accept SS.lv links!</b>\n\n"
+            "Simply send me a link to an SS.lv category or search page (e.g. flats or cars).\n\n"
+            "Or use the menu below:"
         ),
     },
     # ------------------------------------------------------------------ #

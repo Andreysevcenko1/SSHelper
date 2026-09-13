@@ -5,7 +5,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.bot.keyboards.main import main_menu_kb
+from app.bot.keyboards.main import main_menu_kb, main_reply_kb
 from app.bot.utils import try_delete_message
 from app.db.repo import ReferralRepository, TrialRepository, UserSettingsRepository
 from app.i18n import get_text, resolve_lang
@@ -70,7 +70,8 @@ async def cmd_start(
                 except Exception:
                     logger.debug("Could not notify referrer %s", referrer_id)
 
-    sent = await message.answer(get_text("welcome", lang), reply_markup=main_menu_kb(lang=lang))
+    await message.answer(get_text("welcome", lang), reply_markup=main_reply_kb(lang=lang))
+    sent = await message.answer(get_text("menu_welcome", lang), reply_markup=main_menu_kb(lang=lang))
     # Pin the menu so it stays reachable when notifications push it up.
     try:
         await sent.bot.unpin_all_chat_messages(chat_id=sent.chat.id)

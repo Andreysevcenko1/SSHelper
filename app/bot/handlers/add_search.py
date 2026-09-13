@@ -42,6 +42,39 @@ _ALLOWED_SS_HOSTS = {
     "ss.com", "www.ss.com", "m.ss.com",
 }
 
+_SS_URL_REGEX = re.compile(
+    r"(?:https?://)?(?:www\.|m\.)?(?:ss\.lv|ss\.com)/[^\s]+",
+    re.IGNORECASE,
+)
+
+
+def _get_button_texts(key: str) -> set[str]:
+    return {get_text(key, lang) for lang in ("lv", "ru", "en")}
+
+
+def _my_searches_btns() -> set[str]:
+    return _get_button_texts("btn_my_searches")
+
+
+def _add_search_btns() -> set[str]:
+    return _get_button_texts("btn_add_search")
+
+
+def _subscription_btns() -> set[str]:
+    return _get_button_texts("btn_subscription")
+
+
+def _language_btns() -> set[str]:
+    return _get_button_texts("btn_language")
+
+
+def _help_btns() -> set[str]:
+    return _get_button_texts("btn_help")
+
+
+def _cancel_btns() -> set[str]:
+    return _get_button_texts("btn_cancel")
+
 
 def _normalize_ss_url(url: str) -> str:
     """Normalize SS.lv URL variants: mobile m. host -> www. (different HTML)."""
@@ -198,12 +231,39 @@ async def fsm_add_url(
     state: FSMContext,
     session_factory: sessionmaker[Session],
 ) -> None:
-    url = (message.text or "").strip()
+    text = (message.text or "").strip()
     await try_delete_message(message)
 
     user_id = message.from_user.id if message.from_user else None
     tg_lang = message.from_user.language_code if message.from_user else None
     lang = get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
+
+    if text in _cancel_btns() or text in (_my_searches_btns() | _subscription_btns() | _language_btns() | _help_btns()):
+        await state.clear()
+        if text in _my_searches_btns():
+            from app.bot.handlers.searches import cmd_list
+            await cmd_list(message, session_factory)
+            return
+        if text in _subscription_btns() and user_id:
+            from app.bot.handlers.subscription import _status_text, subscription_kb
+            await message.answer(_status_text(user_id, lang, session_factory), reply_markup=subscription_kb(lang))
+            return
+        if text in _language_btns():
+            from app.bot.keyboards.main import lang_selection_kb
+            await message.answer(get_text("lang_select_prompt", lang), reply_markup=lang_selection_kb(lang=lang))
+            return
+        if text in _help_btns():
+            from app.bot.keyboards.main import main_menu_kb
+            await message.answer(get_text("help_text", lang), reply_markup=main_menu_kb(lang=lang))
+            return
+        from app.bot.keyboards.main import main_reply_kb
+        await message.answer(get_text("menu_welcome", lang), reply_markup=main_reply_kb(lang=lang))
+        return
+
+    match = _SS_URL_REGEX.search(text)
+    url = match.group(0).rstrip(".,);:>") if match else text
+    if not url.startswith(("http://", "https://")) and ("ss.lv" in url.lower() or "ss.com" in url.lower()):
+        url = f"https://{url}"
 
     data = await state.get_data()
     prompt_msg_id: int | None = data.get("prompt_msg_id")
@@ -483,4 +543,82 @@ async def cb_brand_fix(
         edit_msg_id=prompt_msg_id or callback.message.message_id,
         lang=lang,
         user_id=user_id,
+    )
+
+
+# ------------------------------------------------------------------ #
+# Private DM fallback & auto-url handler                             #
+# ------------------------------------------------------------------ #
+
+
+@router.message(F.chat.type == "private", StateFilter(None), F.text)
+async def handle_private_text(
+    message: Message,
+    state: FSMContext,
+    session_factory: sessionmaker[Session],
+) -> None:
+    text = (message.text or "").strip()
+    user_id = message.from_user.id if message.from_user else None
+    tg_lang = message.from_user.language_code if message.from_user else None
+    lang = get_user_lang(user_id, tg_lang, session_factory) if user_id else "lv"
+
+    if text in _my_searches_btns():
+        from app.bot.handlers.searches import cmd_list
+        await cmd_list(message, session_factory)
+        return
+
+    if text in _add_search_btns():
+        prompt = await message.answer(
+            get_text("add_search_prompt", lang),
+            reply_markup=cancel_kb(lang=lang),
+        )
+        await state.set_state(AddSearchFSM.waiting_url)
+        await state.update_data(prompt_msg_id=prompt.message_id)
+        return
+
+    if text in _subscription_btns():
+        if user_id:
+            from app.bot.handlers.subscription import _status_text, subscription_kb
+            await message.answer(
+                _status_text(user_id, lang, session_factory),
+                reply_markup=subscription_kb(lang),
+            )
+        return
+
+    if text in _language_btns():
+        from app.bot.keyboards.main import lang_selection_kb
+        await message.answer(
+            get_text("lang_select_prompt", lang),
+            reply_markup=lang_selection_kb(lang=lang),
+        )
+        return
+
+    if text in _help_btns():
+        from app.bot.keyboards.main import main_menu_kb
+        await message.answer(
+            get_text("help_text", lang),
+            reply_markup=main_menu_kb(lang=lang),
+        )
+        return
+
+    # Check for SS.lv or SS.com URL anywhere in text
+    match = _SS_URL_REGEX.search(text)
+    if match:
+        url = match.group(0).rstrip(".,);:>")
+        if not url.startswith(("http://", "https://")):
+            url = f"https://{url}"
+        await _process_add_url(
+            message=message,
+            url=url,
+            session_factory=session_factory,
+            lang=lang,
+            user_id=user_id,
+        )
+        return
+
+    # Unrecognized DM text fallback
+    from app.bot.keyboards.main import main_reply_kb
+    await message.answer(
+        get_text("dm_fallback_prompt", lang),
+        reply_markup=main_reply_kb(lang=lang),
     )

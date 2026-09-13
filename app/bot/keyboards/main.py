@@ -1,5 +1,5 @@
-from aiogram.types import InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 from app.bot.callbacks import LangCB, MenuCB, SubCB
 from app.i18n import get_text
@@ -15,6 +15,18 @@ def main_menu_kb(lang: str = "lv") -> InlineKeyboardMarkup:
     b.button(text=get_text("btn_help", lang), callback_data=MenuCB(action="help"))
     b.adjust(1)
     return b.as_markup()
+
+
+def main_reply_kb(lang: str = "lv") -> ReplyKeyboardMarkup:
+    """Persistent reply keyboard shown at the bottom of private chat."""
+    b = ReplyKeyboardBuilder()
+    b.button(text=get_text("btn_my_searches", lang))
+    b.button(text=get_text("btn_add_search", lang))
+    b.button(text=get_text("btn_subscription", lang))
+    b.button(text=get_text("btn_language", lang))
+    b.button(text=get_text("btn_help", lang))
+    b.adjust(2, 2, 1)
+    return b.as_markup(resize_keyboard=True)
 
 
 def lang_selection_kb(lang: str = "lv") -> InlineKeyboardMarkup:
