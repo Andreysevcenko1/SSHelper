@@ -22,6 +22,10 @@ class Config:
     thread_flea_market: Optional[int] = None
     # Admin user IDs allowed to manage group searches (comma-separated in env)
     admin_user_ids: list[int] = field(default_factory=list)
+    # Facebook Page auto-posting (Graph API) — optional
+    facebook_enabled: bool = False
+    facebook_page_id: Optional[str] = None
+    facebook_page_access_token: Optional[str] = None
 
 
 def _parse_optional_int(raw: str, name: str) -> Optional[int]:
@@ -96,6 +100,23 @@ def load_config() -> Config:
                 f"BROADCAST_ENABLED=true requires these env vars to be set: {', '.join(missing)}"
             )
 
+    # Facebook Page auto-posting config
+    facebook_enabled_raw = os.getenv("FACEBOOK_ENABLED", "false").strip().lower()
+    facebook_enabled = facebook_enabled_raw in {"1", "true", "yes"}
+    facebook_page_id = os.getenv("FACEBOOK_PAGE_ID", "").strip() or None
+    facebook_page_access_token = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN", "").strip() or None
+
+    if facebook_enabled:
+        missing_fb = []
+        if not facebook_page_id:
+            missing_fb.append("FACEBOOK_PAGE_ID")
+        if not facebook_page_access_token:
+            missing_fb.append("FACEBOOK_PAGE_ACCESS_TOKEN")
+        if missing_fb:
+            raise ValueError(
+                f"FACEBOOK_ENABLED=true requires these env vars to be set: {', '.join(missing_fb)}"
+            )
+
     return Config(
         telegram_bot_token=token,
         database_url=database_url,
@@ -110,4 +131,7 @@ def load_config() -> Config:
         thread_work_riga=thread_work_riga,
         thread_flea_market=thread_flea_market,
         admin_user_ids=admin_user_ids,
+        facebook_enabled=facebook_enabled,
+        facebook_page_id=facebook_page_id,
+        facebook_page_access_token=facebook_page_access_token,
     )

@@ -6,7 +6,9 @@ No user_id involvement at any point.
 """
 
 import asyncio
+import html
 import logging
+import re
 
 from aiogram import Bot
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -16,7 +18,8 @@ from app.config import Config
 from app.db.models import GroupSearch
 from app.db.repo import GroupSearchRepository
 from app.services.fetch_coordinator import FetchCoordinator
-from app.services.formatter import format_listing_message
+from app.services.facebook_publisher import publish_to_facebook_page
+from app.services.formatter import format_listing_message, select_image_url
 from app.services.listing_filter import is_buy_request
 from app.services.notifier import send_listing_notification
 from app.services.ss_parser import Listing, SSParser
@@ -24,6 +27,22 @@ from app.services.ss_parser import Listing, SSParser
 logger = logging.getLogger(__name__)
 
 _VALID_ROUTE_KEYS = {"ire_riga", "sell_riga", "auto_riga", "work_riga", "flea_market", "other"}
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _to_facebook_text(html_text: str, listing_url: str) -> str:
+    """Strip HTML markup from a Telegram-formatted message for Facebook Feed/Photo posts.
+
+    Facebook's Graph API does not render HTML — it only accepts plain text.
+    The listing URL is preserved on its own line so Facebook can still
+    auto-linkify it.
+    """
+    plain = _HTML_TAG_RE.sub("", html_text)
+    plain = html.unescape(plain)
+    if listing_url not in plain:
+        plain = f"{plain}\n{listing_url}"
+    return plain.strip()
 
 
 def _thread_id_for_route_key(route_key: str, config: Config) -> int | None:
@@ -194,3 +213,13 @@ class GroupWatcherService:
             reply_markup=kb,
             thread_id=thread_id,
         )
+
+        if self.config.facebook_enabled:
+            fb_text = _to_facebook_text(text, listing.url)
+            image_url = select_image_url(listing)
+            await publish_to_facebook_page(
+                config=self.config,
+                text=fb_text,
+                image_url=image_url,
+                listing_id=listing.external_id,
+            )
