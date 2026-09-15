@@ -54,6 +54,18 @@ def test_to_facebook_text_does_not_duplicate_url():
     assert plain.count(url) == 1
 
 
+def test_to_facebook_text_adds_route_header_and_hashtags():
+    html_text = "Pilsēta: Rīga"
+    plain = _to_facebook_text(
+        html_text,
+        "https://www.ss.lv/msg/lv/x.html",
+        route_key="ire_riga",
+    )
+    assert plain.startswith("🏠 DZĪVOKĻI / ĪRE RĪGĀ")
+    assert "#SSlv #Riga #Dzivokli #Ire" in plain
+    assert "\n\nPilsēta: Rīga" in plain
+
+
 # ------------------------------------------------------------------ #
 # publish_to_facebook_page                                             #
 # ------------------------------------------------------------------ #
@@ -190,10 +202,16 @@ async def test_group_watcher_posts_to_facebook_when_enabled():
 
     with patch("app.services.group_watcher.send_listing_notification", new=AsyncMock(return_value=("text", 1))), \
          patch("app.services.group_watcher.publish_to_facebook_page", new=AsyncMock(return_value=True)) as fb_mock:
-        await service._send_group_notification(chat_id=-1001, thread_id=1, listing=listing)
+        await service._send_group_notification(
+            chat_id=-1001,
+            thread_id=1,
+            listing=listing,
+            route_key="ire_riga",
+        )
 
     fb_mock.assert_awaited_once()
     assert fb_mock.call_args.kwargs["listing_id"] == "hiofx"
+    assert fb_mock.call_args.kwargs["text"].startswith("🏠 DZĪVOKĻI / ĪRE RĪGĀ")
 
 
 @pytest.mark.asyncio
@@ -218,6 +236,11 @@ async def test_group_watcher_skips_facebook_when_disabled():
 
     with patch("app.services.group_watcher.send_listing_notification", new=AsyncMock(return_value=("text", 1))), \
          patch("app.services.group_watcher.publish_to_facebook_page", new=AsyncMock()) as fb_mock:
-        await service._send_group_notification(chat_id=-1001, thread_id=1, listing=listing)
+        await service._send_group_notification(
+            chat_id=-1001,
+            thread_id=1,
+            listing=listing,
+            route_key="ire_riga",
+        )
 
     fb_mock.assert_not_awaited()

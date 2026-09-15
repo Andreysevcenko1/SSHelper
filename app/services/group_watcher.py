@@ -30,18 +30,30 @@ _VALID_ROUTE_KEYS = {"ire_riga", "sell_riga", "auto_riga", "work_riga", "flea_ma
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 
+_FACEBOOK_ROUTE_HEADERS = {
+    "ire_riga": "🏠 DZĪVOKĻI / ĪRE RĪGĀ\n#SSlv #Riga #Dzivokli #Ire",
+    "sell_riga": "🏢 DZĪVOKĻI / PĀRDOŠANA RĪGĀ\n#SSlv #Riga #Dzivokli #Pardosana",
+    "auto_riga": "🚗 AUTO RĪGĀ\n#SSlv #Riga #Auto",
+    "work_riga": "💼 DARBS RĪGĀ\n#SSlv #Riga #Darbs",
+    "flea_market": "📦 MANTAS / TIRGUS\n#SSlv #Riga #Mantas",
+    "other": "📍 CITI SS.LV SLUDINĀJUMI\n#SSlv #Riga #Sludinajumi",
+}
 
-def _to_facebook_text(html_text: str, listing_url: str) -> str:
+def _to_facebook_text(html_text: str, listing_url: str, route_key: str | None = None) -> str:
     """Strip HTML markup from a Telegram-formatted message for Facebook Feed/Photo posts.
 
     Facebook's Graph API does not render HTML — it only accepts plain text.
     The listing URL is preserved on its own line so Facebook can still
-    auto-linkify it.
+    auto-linkify it. A route header is added when available to emulate the
+    Telegram forum-topic structure in Facebook's flat Page feed.
     """
     plain = _HTML_TAG_RE.sub("", html_text)
     plain = html.unescape(plain)
     if listing_url not in plain:
         plain = f"{plain}\n{listing_url}"
+    header = _FACEBOOK_ROUTE_HEADERS.get(route_key or "")
+    if header:
+        plain = f"{header}\n\n{plain}"
     return plain.strip()
 
 
@@ -187,6 +199,7 @@ class GroupWatcherService:
                     chat_id=self.config.broadcast_chat_id,  # type: ignore[arg-type]
                     thread_id=thread_id,
                     listing=listing,
+                    route_key=route_key,
                 )
             except Exception:
                 logger.exception(
@@ -200,6 +213,7 @@ class GroupWatcherService:
         chat_id: int,
         thread_id: int,
         listing: Listing,
+        route_key: str | None = None,
     ) -> None:
         text = format_listing_message(listing)
         link_btn = InlineKeyboardButton(text="🔗 Skatīt / View", url=listing.url)
@@ -215,7 +229,7 @@ class GroupWatcherService:
         )
 
         if self.config.facebook_enabled:
-            fb_text = _to_facebook_text(text, listing.url)
+            fb_text = _to_facebook_text(text, listing.url, route_key=route_key)
             image_url = select_image_url(listing)
             await publish_to_facebook_page(
                 config=self.config,
