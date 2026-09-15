@@ -34,8 +34,13 @@ async def publish_to_facebook_page(
     text: str,
     image_url: str | None = None,
     listing_id: str | None = None,
+    route_key: str | None = None,
 ) -> bool:
     """Post *text* (optionally with *image_url*) to the configured Facebook Page.
+
+    When ``Config.facebook_route_targets`` contains *route_key*, that
+    category-specific Page is used. Otherwise the default ``FACEBOOK_PAGE_ID``
+    and ``FACEBOOK_PAGE_ACCESS_TOKEN`` are used.
 
     Returns ``True`` on success, ``False`` otherwise (never raises — failures
     are logged and treated as non-fatal, matching the "best effort" policy
@@ -43,15 +48,22 @@ async def publish_to_facebook_page(
     """
     if not config.facebook_enabled:
         return False
-    if not config.facebook_page_id or not config.facebook_page_access_token:
+
+    target = config.facebook_route_targets.get(route_key or "")
+    if target:
+        page_id = target.page_id
+        token = target.access_token
+        target_label = f"route:{route_key}"
+    elif config.facebook_page_id and config.facebook_page_access_token:
+        page_id = config.facebook_page_id
+        token = config.facebook_page_access_token
+        target_label = "default"
+    else:
         logger.warning(
-            "Facebook publish skipped for listing=%s — missing page_id/access_token",
-            listing_id,
+            "Facebook publish skipped for listing=%s route=%s — missing page_id/access_token",
+            listing_id, route_key,
         )
         return False
-
-    page_id = config.facebook_page_id
-    token = config.facebook_page_access_token
 
     try:
         async with aiohttp.ClientSession(timeout=_REQUEST_TIMEOUT) as session:
@@ -73,17 +85,23 @@ async def publish_to_facebook_page(
                 body = await resp.json(content_type=None)
                 if resp.status == 200 and "error" not in body:
                     logger.info(
-                        "Facebook post ok listing=%s post_id=%s has_image=%s",
+                        "Facebook post ok listing=%s route=%s target=%s page_id=%s post_id=%s has_image=%s",
                         listing_id,
+                        route_key,
+                        target_label,
+                        page_id,
                         body.get("post_id") or body.get("id"),
                         bool(image_url),
                     )
                     return True
                 logger.warning(
-                    "Facebook post failed listing=%s status=%s body=%s",
-                    listing_id, resp.status, body,
+                    "Facebook post failed listing=%s route=%s target=%s page_id=%s status=%s body=%s",
+                    listing_id, route_key, target_label, page_id, resp.status, body,
                 )
                 return False
     except Exception as exc:
-        logger.warning("Facebook post exception listing=%s — %s", listing_id, exc)
+        logger.warning(
+            "Facebook post exception listing=%s route=%s target=%s page_id=%s — %s",
+            listing_id, route_key, target_label, page_id, exc,
+        )
         return False

@@ -236,4 +236,5 @@ class GroupWatcherService:
                 text=fb_text,
                 image_url=image_url,
                 listing_id=listing.external_id,
+                route_key=route_key,
             )

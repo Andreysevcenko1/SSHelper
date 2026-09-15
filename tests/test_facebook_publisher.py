@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.config import Config
+from app.config import Config, FacebookPageTarget, load_config
 from app.services.facebook_publisher import publish_to_facebook_page
 from app.services.group_watcher import GroupWatcherService, _to_facebook_text
 from app.services.ss_parser import Listing
@@ -18,6 +18,51 @@ def _fb_config(**overrides) -> Config:
     )
     base.update(overrides)
     return Config(**base)
+
+
+def _mock_graph_session(response_body: dict, status: int = 200):
+    mock_resp = AsyncMock()
+    mock_resp.status = status
+    mock_resp.json = AsyncMock(return_value=response_body)
+
+    mock_post_cm = MagicMock()
+    mock_post_cm.__aenter__ = AsyncMock(return_value=mock_resp)
+    mock_post_cm.__aexit__ = AsyncMock(return_value=False)
+
+    mock_session = MagicMock()
+    mock_session.post = MagicMock(return_value=mock_post_cm)
+    mock_session_cm = MagicMock()
+    mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_cm.__aexit__ = AsyncMock(return_value=False)
+    return mock_session, mock_session_cm
+
+
+def test_load_config_parses_facebook_route_targets_json(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "telegram-token")
+    monkeypatch.setenv("FACEBOOK_ENABLED", "true")
+    monkeypatch.delenv("FACEBOOK_PAGE_ID", raising=False)
+    monkeypatch.delenv("FACEBOOK_PAGE_ACCESS_TOKEN", raising=False)
+    monkeypatch.setenv(
+        "FACEBOOK_ROUTE_TARGETS_JSON",
+        '{"ire_riga":{"page_id":"111","access_token":"token-111"},'
+        '"auto_riga":{"page_id":"222","access_token":"token-222"}}',
+    )
+
+    config = load_config()
+
+    assert config.facebook_enabled is True
+    assert config.facebook_route_targets["ire_riga"].page_id == "111"
+    assert config.facebook_route_targets["ire_riga"].access_token == "token-111"
+    assert config.facebook_route_targets["auto_riga"].page_id == "222"
+
+
+def test_load_config_rejects_invalid_facebook_route_targets_json(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "telegram-token")
+    monkeypatch.setenv("FACEBOOK_ENABLED", "true")
+    monkeypatch.setenv("FACEBOOK_ROUTE_TARGETS_JSON", "{broken")
+
+    with pytest.raises(ValueError, match="FACEBOOK_ROUTE_TARGETS_JSON must be valid JSON"):
+        load_config()
 
 
 # ------------------------------------------------------------------ #
@@ -89,19 +134,7 @@ async def test_publish_missing_credentials_returns_false():
 async def test_publish_text_only_success():
     config = _fb_config()
 
-    mock_resp = AsyncMock()
-    mock_resp.status = 200
-    mock_resp.json = AsyncMock(return_value={"id": "123_456"})
-
-    mock_post_cm = MagicMock()
-    mock_post_cm.__aenter__ = AsyncMock(return_value=mock_resp)
-    mock_post_cm.__aexit__ = AsyncMock(return_value=False)
-
-    mock_session = MagicMock()
-    mock_session.post = MagicMock(return_value=mock_post_cm)
-    mock_session_cm = MagicMock()
-    mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session_cm.__aexit__ = AsyncMock(return_value=False)
+    mock_session, mock_session_cm = _mock_graph_session({"id": "123_456"})
 
     with patch("app.services.facebook_publisher.aiohttp.ClientSession", return_value=mock_session_cm):
         result = await publish_to_facebook_page(config, "Pilsēta: Rīga", listing_id="hiofx")
@@ -118,19 +151,7 @@ async def test_publish_text_only_success():
 async def test_publish_with_image_uses_photos_endpoint():
     config = _fb_config()
 
-    mock_resp = AsyncMock()
-    mock_resp.status = 200
-    mock_resp.json = AsyncMock(return_value={"post_id": "123_789"})
-
-    mock_post_cm = MagicMock()
-    mock_post_cm.__aenter__ = AsyncMock(return_value=mock_resp)
-    mock_post_cm.__aexit__ = AsyncMock(return_value=False)
-
-    mock_session = MagicMock()
-    mock_session.post = MagicMock(return_value=mock_post_cm)
-    mock_session_cm = MagicMock()
-    mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session_cm.__aexit__ = AsyncMock(return_value=False)
+    mock_session, mock_session_cm = _mock_graph_session({"post_id": "123_789"})
 
     with patch("app.services.facebook_publisher.aiohttp.ClientSession", return_value=mock_session_cm):
         result = await publish_to_facebook_page(
@@ -149,19 +170,10 @@ async def test_publish_with_image_uses_photos_endpoint():
 async def test_publish_graph_api_error_returns_false():
     config = _fb_config()
 
-    mock_resp = AsyncMock()
-    mock_resp.status = 400
-    mock_resp.json = AsyncMock(return_value={"error": {"message": "Invalid token"}})
-
-    mock_post_cm = MagicMock()
-    mock_post_cm.__aenter__ = AsyncMock(return_value=mock_resp)
-    mock_post_cm.__aexit__ = AsyncMock(return_value=False)
-
-    mock_session = MagicMock()
-    mock_session.post = MagicMock(return_value=mock_post_cm)
-    mock_session_cm = MagicMock()
-    mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session_cm.__aexit__ = AsyncMock(return_value=False)
+    mock_session, mock_session_cm = _mock_graph_session(
+        {"error": {"message": "Invalid token"}},
+        status=400,
+    )
 
     with patch("app.services.facebook_publisher.aiohttp.ClientSession", return_value=mock_session_cm):
         result = await publish_to_facebook_page(config, "hello", listing_id="1")
@@ -175,6 +187,58 @@ async def test_publish_network_exception_returns_false():
     with patch("app.services.facebook_publisher.aiohttp.ClientSession", side_effect=RuntimeError("boom")):
         result = await publish_to_facebook_page(config, "hello", listing_id="1")
     assert result is False
+
+
+@pytest.mark.asyncio
+async def test_publish_uses_route_specific_page_when_configured():
+    config = _fb_config(
+        facebook_page_id="default-page",
+        facebook_page_access_token="default-token",
+        facebook_route_targets={
+            "ire_riga": FacebookPageTarget(page_id="rent-page", access_token="rent-token")
+        },
+    )
+    mock_session, mock_session_cm = _mock_graph_session({"id": "rent-page_456"})
+
+    with patch("app.services.facebook_publisher.aiohttp.ClientSession", return_value=mock_session_cm):
+        result = await publish_to_facebook_page(
+            config,
+            "Pilsēta: Rīga",
+            listing_id="hiofx",
+            route_key="ire_riga",
+        )
+
+    assert result is True
+    called_url = mock_session.post.call_args.args[0]
+    assert "/rent-page/feed" in called_url
+    payload = mock_session.post.call_args.kwargs["data"]
+    assert payload["access_token"] == "rent-token"
+
+
+@pytest.mark.asyncio
+async def test_publish_falls_back_to_default_page_for_unconfigured_route():
+    config = _fb_config(
+        facebook_page_id="default-page",
+        facebook_page_access_token="default-token",
+        facebook_route_targets={
+            "ire_riga": FacebookPageTarget(page_id="rent-page", access_token="rent-token")
+        },
+    )
+    mock_session, mock_session_cm = _mock_graph_session({"id": "default-page_456"})
+
+    with patch("app.services.facebook_publisher.aiohttp.ClientSession", return_value=mock_session_cm):
+        result = await publish_to_facebook_page(
+            config,
+            "Marka: BMW",
+            listing_id="car1",
+            route_key="auto_riga",
+        )
+
+    assert result is True
+    called_url = mock_session.post.call_args.args[0]
+    assert "/default-page/feed" in called_url
+    payload = mock_session.post.call_args.kwargs["data"]
+    assert payload["access_token"] == "default-token"
 
 
 # ------------------------------------------------------------------ #
@@ -211,6 +275,7 @@ async def test_group_watcher_posts_to_facebook_when_enabled():
 
     fb_mock.assert_awaited_once()
     assert fb_mock.call_args.kwargs["listing_id"] == "hiofx"
+    assert fb_mock.call_args.kwargs["route_key"] == "ire_riga"
     assert fb_mock.call_args.kwargs["text"].startswith("🏠 DZĪVOKĻI / ĪRE RĪGĀ")
 
 

@@ -1,8 +1,15 @@
 from dataclasses import dataclass, field
+import json
 import os
 from typing import Optional
 
 from dotenv import load_dotenv
+
+
+@dataclass(slots=True)
+class FacebookPageTarget:
+    page_id: str
+    access_token: str
 
 
 @dataclass(slots=True)
@@ -26,6 +33,7 @@ class Config:
     facebook_enabled: bool = False
     facebook_page_id: Optional[str] = None
     facebook_page_access_token: Optional[str] = None
+    facebook_route_targets: dict[str, FacebookPageTarget] = field(default_factory=dict)
 
 
 def _parse_optional_int(raw: str, name: str) -> Optional[int]:
@@ -37,6 +45,36 @@ def _parse_optional_int(raw: str, name: str) -> Optional[int]:
         return int(raw)
     except ValueError as exc:
         raise ValueError(f"{name} must be an integer, got: {raw!r}") from exc
+
+
+def _parse_facebook_route_targets(raw: str) -> dict[str, FacebookPageTarget]:
+    raw = raw.strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError("FACEBOOK_ROUTE_TARGETS_JSON must be valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("FACEBOOK_ROUTE_TARGETS_JSON must be a JSON object")
+
+    targets: dict[str, FacebookPageTarget] = {}
+    for route_key, value in parsed.items():
+        if not isinstance(route_key, str) or not isinstance(value, dict):
+            raise ValueError(
+                "FACEBOOK_ROUTE_TARGETS_JSON must map route keys to objects"
+            )
+        page_id = str(value.get("page_id", "")).strip()
+        access_token = str(value.get("access_token", "")).strip()
+        if not page_id or not access_token:
+            raise ValueError(
+                f"FACEBOOK_ROUTE_TARGETS_JSON target {route_key!r} requires page_id and access_token"
+            )
+        targets[route_key] = FacebookPageTarget(
+            page_id=page_id,
+            access_token=access_token,
+        )
+    return targets
 
 
 def load_config() -> Config:
@@ -105,16 +143,26 @@ def load_config() -> Config:
     facebook_enabled = facebook_enabled_raw in {"1", "true", "yes"}
     facebook_page_id = os.getenv("FACEBOOK_PAGE_ID", "").strip() or None
     facebook_page_access_token = os.getenv("FACEBOOK_PAGE_ACCESS_TOKEN", "").strip() or None
+    facebook_route_targets = _parse_facebook_route_targets(
+        os.getenv("FACEBOOK_ROUTE_TARGETS_JSON", "")
+    )
 
     if facebook_enabled:
         missing_fb = []
-        if not facebook_page_id:
+        has_default_target = bool(facebook_page_id and facebook_page_access_token)
+        if not has_default_target and not facebook_route_targets:
             missing_fb.append("FACEBOOK_PAGE_ID")
-        if not facebook_page_access_token:
             missing_fb.append("FACEBOOK_PAGE_ACCESS_TOKEN")
+        elif bool(facebook_page_id) != bool(facebook_page_access_token):
+            if not facebook_page_id:
+                missing_fb.append("FACEBOOK_PAGE_ID")
+            if not facebook_page_access_token:
+                missing_fb.append("FACEBOOK_PAGE_ACCESS_TOKEN")
         if missing_fb:
             raise ValueError(
-                f"FACEBOOK_ENABLED=true requires these env vars to be set: {', '.join(missing_fb)}"
+                "FACEBOOK_ENABLED=true requires either FACEBOOK_PAGE_ID + "
+                "FACEBOOK_PAGE_ACCESS_TOKEN or FACEBOOK_ROUTE_TARGETS_JSON; "
+                f"missing: {', '.join(missing_fb)}"
             )
 
     return Config(
@@ -134,4 +182,5 @@ def load_config() -> Config:
         facebook_enabled=facebook_enabled,
         facebook_page_id=facebook_page_id,
         facebook_page_access_token=facebook_page_access_token,
+        facebook_route_targets=facebook_route_targets,
     )
