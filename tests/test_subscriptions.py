@@ -14,6 +14,7 @@ from app.bot.handlers.add_search import (
     _resolve_cars_brand_from_url,
     _strip_query_keys,
 )
+from app.bot.handlers.subscription import _status_text
 
 
 @pytest.fixture()
@@ -49,6 +50,19 @@ def test_free_limit_default(session):
     repo = SubscriptionRepository(session)
     assert repo.active_search_limit(1) == 1
     assert repo.get_active(1) is None
+
+
+def test_admin_search_limit_is_unlimited(session):
+    repo = SubscriptionRepository(session)
+    assert repo.active_search_limit(42, [42]) is None
+    assert repo.active_search_limit(41, [42]) == 1
+
+
+def test_admin_subscription_status_shows_unlimited(session):
+    factory = sessionmaker(bind=session.get_bind())
+    text = _status_text(42, "ru", factory, [42])
+    assert "Администратор: неограниченное количество поисков" in text
+    assert "без ограничений" in text
 
 
 def test_set_plan_increases_limit(session):

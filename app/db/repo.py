@@ -325,8 +325,14 @@ class SubscriptionRepository:
         self.session.refresh(sub)
         return sub
 
-    def active_search_limit(self, user_id: int) -> int:
-        """Total allowed active searches: trial (1) or paid plan slots + referral bonus."""
+    def active_search_limit(
+        self,
+        user_id: int,
+        admin_user_ids: list[int] | tuple[int, ...] | set[int] = (),
+    ) -> int | None:
+        """Return active-search limit, or ``None`` for an unlimited admin."""
+        if user_id in admin_user_ids:
+            return None
         base = 1 if TrialRepository(self.session).is_active(user_id) else 0
         sub = self.get_active(user_id)
         referral_bonus = ReferralRepository(self.session).bonus_slots(user_id)

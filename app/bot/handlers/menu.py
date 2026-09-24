@@ -19,6 +19,7 @@ from app.bot.keyboards.searches import (
 )
 from app.bot.keyboards.filters import filters_menu_kb
 from app.bot.states import AddSearchFSM
+from app.config import Config
 from app.db.repo import SearchRepository
 from app.filters.profiles import detect_profile
 from app.filters.renderer import render_canonical_filters
@@ -267,6 +268,7 @@ async def cb_search_resume(
     callback: CallbackQuery,
     callback_data: SearchCB,
     session_factory: sessionmaker[Session],
+    config: Config | None = None,
 ) -> None:
     user_id = callback.from_user.id if callback.from_user else None
     tg_lang = callback.from_user.language_code if callback.from_user else None
@@ -285,8 +287,10 @@ async def cb_search_resume(
             await callback.answer(get_text("err_already_active", lang), show_alert=True)
             return
         from app.db.repo import SubscriptionRepository
-        limit = SubscriptionRepository(session).active_search_limit(user_id)
-        if repo.count_active_for_user(user_id) >= limit:
+        limit = SubscriptionRepository(session).active_search_limit(
+            user_id, config.admin_user_ids if config else []
+        )
+        if limit is not None and repo.count_active_for_user(user_id) >= limit:
             await callback.answer(
                 get_text("err_search_limit", lang, limit=limit), show_alert=True
             )

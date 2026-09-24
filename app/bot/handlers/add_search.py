@@ -17,6 +17,7 @@ from app.bot.keyboards.filters import cancel_kb
 from app.bot.keyboards.searches import after_add_kb
 from app.bot.states import AddSearchFSM
 from app.bot.utils import try_delete_message
+from app.config import Config
 from app.db.repo import SearchRepository, SubscriptionRepository
 from app.i18n import get_text, translate_category
 from app.services.filters import (
@@ -199,6 +200,7 @@ async def cmd_add(
     message: Message,
     session_factory: sessionmaker[Session],
     state: FSMContext,
+    config: Config | None = None,
 ) -> None:
     await try_delete_message(message)
     user_id = message.from_user.id if message.from_user else None
@@ -217,7 +219,13 @@ async def cmd_add(
         return
 
     url = command_parts[1].strip()
-    await _process_add_url(message=message, url=url, session_factory=session_factory, lang=lang)
+    await _process_add_url(
+        message=message,
+        url=url,
+        session_factory=session_factory,
+        lang=lang,
+        admin_user_ids=config.admin_user_ids if config else [],
+    )
 
 
 # ------------------------------------------------------------------ #
@@ -230,6 +238,7 @@ async def fsm_add_url(
     message: Message,
     state: FSMContext,
     session_factory: sessionmaker[Session],
+    config: Config | None = None,
 ) -> None:
     text = (message.text or "").strip()
     await try_delete_message(message)
@@ -246,7 +255,13 @@ async def fsm_add_url(
             return
         if text in _subscription_btns() and user_id:
             from app.bot.handlers.subscription import _status_text, subscription_kb
-            await message.answer(_status_text(user_id, lang, session_factory), reply_markup=subscription_kb(lang))
+            await message.answer(
+                _status_text(
+                    user_id, lang, session_factory,
+                    config.admin_user_ids if config else [],
+                ),
+                reply_markup=subscription_kb(lang),
+            )
             return
         if text in _language_btns():
             from app.bot.keyboards.main import lang_selection_kb
@@ -329,6 +344,7 @@ async def fsm_add_url(
         session_factory=session_factory,
         edit_msg_id=prompt_msg_id,
         lang=lang,
+        admin_user_ids=config.admin_user_ids if config else [],
     )
 
 
@@ -344,6 +360,7 @@ async def _process_add_url(
     edit_msg_id: int | None = None,
     lang: str = "lv",
     user_id: int | None = None,
+    admin_user_ids: list[int] | None = None,
 ) -> None:
     error_code = _validate_ss_url(url)
     if error_code:
@@ -410,9 +427,9 @@ async def _process_add_url(
 
         category = detect_category(url)
         sub_repo = SubscriptionRepository(session)
-        limit = sub_repo.active_search_limit(user_id)
+        limit = sub_repo.active_search_limit(user_id, admin_user_ids or [])
         active_count = repo.count_active_for_user(user_id)
-        if active_count >= limit:
+        if limit is not None and active_count >= limit:
             text = get_text("err_search_limit", lang, limit=limit)
             kb = _limit_reached_kb(lang)
             if edit_msg_id and message.bot:
@@ -510,6 +527,7 @@ async def cb_brand_fix(
     callback_data: BrandFixCB,
     state: FSMContext,
     session_factory: sessionmaker[Session],
+    config: Config | None = None,
 ) -> None:
     await callback.answer()
     data = await state.get_data()
@@ -543,6 +561,7 @@ async def cb_brand_fix(
         edit_msg_id=prompt_msg_id or callback.message.message_id,
         lang=lang,
         user_id=user_id,
+        admin_user_ids=config.admin_user_ids if config else [],
     )
 
 
@@ -556,6 +575,7 @@ async def handle_private_text(
     message: Message,
     state: FSMContext,
     session_factory: sessionmaker[Session],
+    config: Config | None = None,
 ) -> None:
     text = (message.text or "").strip()
     user_id = message.from_user.id if message.from_user else None
@@ -580,7 +600,10 @@ async def handle_private_text(
         if user_id:
             from app.bot.handlers.subscription import _status_text, subscription_kb
             await message.answer(
-                _status_text(user_id, lang, session_factory),
+                _status_text(
+                    user_id, lang, session_factory,
+                    config.admin_user_ids if config else [],
+                ),
                 reply_markup=subscription_kb(lang),
             )
         return
@@ -613,6 +636,7 @@ async def handle_private_text(
             session_factory=session_factory,
             lang=lang,
             user_id=user_id,
+            admin_user_ids=config.admin_user_ids if config else [],
         )
         return
 

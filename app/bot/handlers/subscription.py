@@ -47,12 +47,17 @@ def subscription_kb(lang: str) -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def _status_text(user_id: int, lang: str, session_factory: sessionmaker[Session]) -> str:
+def _status_text(
+    user_id: int,
+    lang: str,
+    session_factory: sessionmaker[Session],
+    admin_user_ids: list[int] | None = None,
+) -> str:
     session = session_factory()
     try:
         sub_repo = SubscriptionRepository(session)
         sub = sub_repo.get_active(user_id)
-        limit = sub_repo.active_search_limit(user_id)
+        limit = sub_repo.active_search_limit(user_id, admin_user_ids or [])
         active = SearchRepository(session).count_active_for_user(user_id)
         trial_repo = TrialRepository(session)
         trial_active = trial_repo.is_active(user_id)
@@ -61,7 +66,9 @@ def _status_text(user_id: int, lang: str, session_factory: sessionmaker[Session]
         session.close()
 
     lines = [get_text("sub_screen_title", lang)]
-    if sub is not None:
+    if limit is None:
+        lines.append(get_text("sub_status_admin", lang))
+    elif sub is not None:
         from datetime import datetime
         days_left = max(0, (sub.expires_at - datetime.utcnow()).days)
         plan = PLANS.get(sub.plan)
@@ -74,7 +81,10 @@ def _status_text(user_id: int, lang: str, session_factory: sessionmaker[Session]
         lines.append(get_text("sub_status_trial", lang, days=trial_days))
     else:
         lines.append(get_text("sub_status_expired", lang))
-    lines.append(get_text("sub_usage", lang, active=active, limit=limit))
+    if limit is None:
+        lines.append(get_text("sub_usage_unlimited", lang, active=active))
+    else:
+        lines.append(get_text("sub_usage", lang, active=active, limit=limit))
     lines.append("")
     lines.append(get_text("sub_pick_plan", lang))
     return "\n".join(lines)
@@ -85,6 +95,7 @@ async def cb_sub_show(
     callback: CallbackQuery,
     callback_data: SubCB,
     session_factory: sessionmaker[Session],
+    config: Config | None = None,
 ) -> None:
     user_id = callback.from_user.id if callback.from_user else None
     tg_lang = callback.from_user.language_code if callback.from_user else None
@@ -94,7 +105,10 @@ async def cb_sub_show(
         return
     try:
         await callback.message.edit_text(
-            _status_text(user_id, lang, session_factory),
+            _status_text(
+                user_id, lang, session_factory,
+                config.admin_user_ids if config else [],
+            ),
             reply_markup=subscription_kb(lang),
         )
     except TelegramBadRequest:

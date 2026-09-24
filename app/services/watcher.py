@@ -195,7 +195,10 @@ class WatcherService:
             for s in repo.get_active_searches():
                 by_user.setdefault(s.user_id, []).append(s)
             for user_id, items in by_user.items():
-                limit = sub_repo.active_search_limit(user_id)
+                admin_ids = self.config.admin_user_ids if self.config else []
+                limit = sub_repo.active_search_limit(user_id, admin_ids)
+                if limit is None:
+                    continue
                 if len(items) <= limit:
                     continue
                 items.sort(key=lambda s: s.id)

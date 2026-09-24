@@ -119,10 +119,20 @@ _T: dict[str, dict[str, str]] = {
         "ru": "Активный тариф: {plan}\nОсталось дней: {days}",
         "en": "Active plan: {plan}\nDays left: {days}",
     },
+    "sub_status_admin": {
+        "lv": "Administrators: neierobežots meklējumu skaits",
+        "ru": "Администратор: неограниченное количество поисков",
+        "en": "Administrator: unlimited searches",
+    },
     "sub_usage": {
         "lv": "Izmantoti meklējumi: {active} no {limit}",
         "ru": "Используется поисков: {active} из {limit}",
         "en": "Searches in use: {active} of {limit}",
+    },
+    "sub_usage_unlimited": {
+        "lv": "Aktīvie meklējumi: {active} (bez ierobežojuma)",
+        "ru": "Активных поисков: {active} (без ограничений)",
+        "en": "Active searches: {active} (unlimited)",
     },
     "sub_pick_plan": {
         "lv": "Izvēlieties tarifu (uz 30 dienām, jauns tarifs aizstāj esošo):",
