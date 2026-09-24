@@ -27,6 +27,7 @@ from app.services.ss_parser import Listing, SSParser
 logger = logging.getLogger(__name__)
 
 _VALID_ROUTE_KEYS = {"ire_riga", "sell_riga", "auto_riga", "work_riga", "flea_market", "other"}
+_MAX_CONCURRENT_SEARCHES = 4
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 
@@ -103,31 +104,33 @@ class GroupWatcherService:
 
         logger.info("GroupWatcher: checking %d active group search(es)", len(search_ids))
         self.coordinator.prune()
+        concurrency_limit = asyncio.Semaphore(_MAX_CONCURRENT_SEARCHES)
 
         async def _check_one(search_id: int) -> None:
-            task_session = self.session_factory()
-            repo = GroupSearchRepository(task_session)
-            try:
-                search = repo.get_group_search_by_id(search_id)
-                if search is None or not search.is_active:
-                    return
-                fetch_url = search.effective_url or search.url
-                listings = await self.coordinator.fetch_listings(fetch_url, limit=10)
-                logger.info(
-                    "GroupWatcher: group search #%d fetched %d listing(s) from %s",
-                    search_id,
-                    len(listings),
-                    fetch_url,
-                )
-                await self._process_listings(repo=repo, search=search, listings=listings)
-            except Exception:
-                task_session.rollback()
-                logger.exception(
-                    "GroupWatcher: failed to process group search #%d",
-                    search_id,
-                )
-            finally:
-                task_session.close()
+            async with concurrency_limit:
+                task_session = self.session_factory()
+                repo = GroupSearchRepository(task_session)
+                try:
+                    search = repo.get_group_search_by_id(search_id)
+                    if search is None or not search.is_active:
+                        return
+                    fetch_url = search.effective_url or search.url
+                    listings = await self.coordinator.fetch_listings(fetch_url, limit=10)
+                    logger.info(
+                        "GroupWatcher: group search #%d fetched %d listing(s) from %s",
+                        search_id,
+                        len(listings),
+                        fetch_url,
+                    )
+                    await self._process_listings(repo=repo, search=search, listings=listings)
+                except Exception:
+                    task_session.rollback()
+                    logger.exception(
+                        "GroupWatcher: failed to process group search #%d",
+                        search_id,
+                    )
+                finally:
+                    task_session.close()
 
         await asyncio.gather(*(_check_one(search_id) for search_id in search_ids))
 

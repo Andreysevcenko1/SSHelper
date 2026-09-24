@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -82,3 +83,57 @@ async def test_group_watcher_uses_isolated_session_and_rolls_back_failed_search(
     list_session.close.assert_called_once()
     task_session.rollback.assert_called_once()
     task_session.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_group_watcher_limits_concurrent_database_sessions():
+    search_count = 12
+    sessions = [MagicMock() for _ in range(search_count + 1)]
+    session_factory = MagicMock(side_effect=sessions)
+
+    list_repo = MagicMock()
+    list_repo.get_active_group_searches.return_value = [
+        SimpleNamespace(id=search_id) for search_id in range(1, search_count + 1)
+    ]
+    task_repos = []
+    for search_id in range(1, search_count + 1):
+        repo = MagicMock()
+        repo.get_group_search_by_id.return_value = SimpleNamespace(
+            id=search_id,
+            is_active=True,
+            url=f"https://www.ss.lv/lv/work/{search_id}/",
+            effective_url=None,
+        )
+        task_repos.append(repo)
+
+    active_fetches = 0
+    max_active_fetches = 0
+
+    async def fetch_listings(_url, limit):
+        nonlocal active_fetches, max_active_fetches
+        active_fetches += 1
+        max_active_fetches = max(max_active_fetches, active_fetches)
+        await asyncio.sleep(0.01)
+        active_fetches -= 1
+        return []
+
+    coordinator = MagicMock()
+    coordinator.fetch_listings = AsyncMock(side_effect=fetch_listings)
+    service = GroupWatcherService(
+        session_factory=session_factory,
+        parser=MagicMock(),
+        bot=MagicMock(),
+        config=Config(telegram_bot_token="x"),
+        coordinator=coordinator,
+    )
+
+    with patch(
+        "app.services.group_watcher.GroupSearchRepository",
+        side_effect=[list_repo, *task_repos],
+    ):
+        await service.check_all()
+
+    assert max_active_fetches <= 4
+    assert session_factory.call_count == search_count + 1
+    for session in sessions:
+        session.close.assert_called_once()
