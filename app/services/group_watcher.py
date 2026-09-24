@@ -116,7 +116,7 @@ class GroupWatcherService:
                         return
                     fetch_url = search.effective_url or search.url
                     listings = await self.coordinator.fetch_listings(fetch_url, limit=10)
-                    logger.info(
+                    logger.debug(
                         "GroupWatcher: group search #%d fetched %d listing(s) from %s",
                         search_id,
                         len(listings),
@@ -141,7 +141,7 @@ class GroupWatcherService:
         listings: list[Listing],
     ) -> None:
         if not listings:
-            logger.warning("GroupWatcher: no listings for group search #%d", search.id)
+            logger.debug("GroupWatcher: no listings for group search #%d", search.id)
             return
 
         newest = listings[0]
