@@ -160,23 +160,32 @@ class WatcherService:
         try:
             repo = SearchRepository(session)
             await self._enforce_limits(session, repo)
-            searches = repo.get_active_searches()
-            logger.info("Watcher: checking %d active search(es)", len(searches))
-
-            self.coordinator.prune()
-
-            async def _check_one(search) -> None:
-                try:
-                    fetch_url = search.effective_url or search.url
-                    listings = await self.coordinator.fetch_listings(fetch_url, limit=10)
-                    await self._process_listings(repo=repo, search=search, listings=listings)
-                except Exception:
-                    logger.exception("Watcher: failed to process search #%d", search.id)
-
-            # Concurrency is bounded inside FetchCoordinator (shared semaphore).
-            await asyncio.gather(*(_check_one(s) for s in searches))
+            search_ids = [search.id for search in repo.get_active_searches()]
         finally:
             session.close()
+
+        logger.info("Watcher: checking %d active search(es)", len(search_ids))
+        self.coordinator.prune()
+
+        async def _check_one(search_id: int) -> None:
+            task_session = self.session_factory()
+            repo = SearchRepository(task_session)
+            try:
+                search = repo.get_by_id(search_id)
+                if search is None or not search.is_active:
+                    return
+                fetch_url = search.effective_url or search.url
+                listings = await self.coordinator.fetch_listings(fetch_url, limit=10)
+                await self._process_listings(repo=repo, search=search, listings=listings)
+            except Exception:
+                task_session.rollback()
+                logger.exception("Watcher: failed to process search #%d", search_id)
+            finally:
+                task_session.close()
+
+        # Personal-search volume is small and network concurrency remains bounded
+        # by FetchCoordinator; each task owns its DB transaction.
+        await asyncio.gather(*(_check_one(search_id) for search_id in search_ids))
 
     async def _enforce_limits(self, session, repo: SearchRepository) -> None:
         """Pause searches exceeding each user's current limit (trial/plan expiry)."""
