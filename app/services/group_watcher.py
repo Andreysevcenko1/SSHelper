@@ -94,32 +94,42 @@ class GroupWatcherService:
     async def check_all(self) -> None:
         session = self.session_factory()
         try:
-            repo = GroupSearchRepository(session)
-            searches = repo.get_active_group_searches()
-            logger.info("GroupWatcher: checking %d active group search(es)", len(searches))
-
-            self.coordinator.prune()
-
-            async def _check_one(search) -> None:
-                try:
-                    fetch_url = search.effective_url or search.url
-                    listings = await self.coordinator.fetch_listings(fetch_url, limit=10)
-                    logger.info(
-                        "GroupWatcher: group search #%d fetched %d listing(s) from %s",
-                        search.id,
-                        len(listings),
-                        fetch_url,
-                    )
-                    await self._process_listings(repo=repo, search=search, listings=listings)
-                except Exception:
-                    logger.exception(
-                        "GroupWatcher: failed to process group search #%d",
-                        search.id,
-                    )
-
-            await asyncio.gather(*(_check_one(s) for s in searches))
+            search_ids = [
+                search.id
+                for search in GroupSearchRepository(session).get_active_group_searches()
+            ]
         finally:
             session.close()
+
+        logger.info("GroupWatcher: checking %d active group search(es)", len(search_ids))
+        self.coordinator.prune()
+
+        async def _check_one(search_id: int) -> None:
+            task_session = self.session_factory()
+            repo = GroupSearchRepository(task_session)
+            try:
+                search = repo.get_group_search_by_id(search_id)
+                if search is None or not search.is_active:
+                    return
+                fetch_url = search.effective_url or search.url
+                listings = await self.coordinator.fetch_listings(fetch_url, limit=10)
+                logger.info(
+                    "GroupWatcher: group search #%d fetched %d listing(s) from %s",
+                    search_id,
+                    len(listings),
+                    fetch_url,
+                )
+                await self._process_listings(repo=repo, search=search, listings=listings)
+            except Exception:
+                task_session.rollback()
+                logger.exception(
+                    "GroupWatcher: failed to process group search #%d",
+                    search_id,
+                )
+            finally:
+                task_session.close()
+
+        await asyncio.gather(*(_check_one(search_id) for search_id in search_ids))
 
     async def _process_listings(
         self,
