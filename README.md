@@ -33,6 +33,36 @@ python -m app.main
 
 При старте бот автоматически регистрирует все команды через `set_my_commands` — они появятся в меню команд вашего Telegram-клиента.
 
+## Production: защита от заполнения диска и остановки бота
+
+Для VM с systemd в репозитории есть готовый production-пакет:
+
+- ограничивает persistent journal до 200 МБ и хранит логи не более 7 дней;
+- сохраняет минимум 1 ГБ свободного места для системы;
+- каждые 6 часов очищает только воспроизводимые package/temp/log caches;
+- при свободном месте ниже 20% запускает усиленную безопасную очистку;
+- автоматически перезапускает `sshelper.service`, если он остановился;
+- включает `Restart=always` и запуск бота после перезагрузки VM.
+
+Однократная установка:
+
+```bash
+cd ~/SSHelper
+sudo bash deploy/scripts/install-production-guards.sh
+```
+
+Проверка:
+
+```bash
+systemctl list-timers sshelper-maintenance.timer --no-pager
+sudo systemctl status sshelper.service --no-pager
+df -h /
+```
+
+Maintenance-скрипт никогда не удаляет `.env`, SQLite-базу, код или пользовательские
+данные. Он очищает только journal, apt cache, системные временные файлы и старые
+архивированные файлы верхнего уровня `/var/log`.
+
 ## Интернационализация (i18n)
 
 Бот поддерживает три языка: **Latviešu (lv)**, **Русский (ru)**, **English (en)**.

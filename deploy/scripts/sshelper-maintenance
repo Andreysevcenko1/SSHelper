@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SERVICE_NAME="sshelper.service"
+MOUNT_POINT="/"
+MIN_FREE_PERCENT=20
+CRITICAL_FREE_PERCENT=10
+
+log() {
+    printf '%s %s\n' "$(date --iso-8601=seconds)" "$*"
+}
+
+free_percent() {
+    df --output=pcent "$MOUNT_POINT" | tail -1 | tr -dc '0-9' | awk '{print 100 - $1}'
+}
+
+available_kb() {
+    df --output=avail "$MOUNT_POINT" | tail -1 | tr -dc '0-9'
+}
+
+initial_free="$(free_percent)"
+initial_kb="$(available_kb)"
+log "maintenance started: free=${initial_free}% available_kb=${initial_kb}"
+
+# Apply the configured journal ceiling immediately as well as continuously.
+journalctl --vacuum-time=7d >/dev/null || log "warning: journal age cleanup failed"
+journalctl --vacuum-size=200M >/dev/null || log "warning: journal size cleanup failed"
+
+# These are reproducible package caches, never application or database data.
+apt-get clean || log "warning: apt cache cleanup failed"
+
+# Delegate temporary-file cleanup to the distribution's own age/safety rules.
+systemd-tmpfiles --clean || log "warning: temporary-file cleanup failed"
+
+current_free="$(free_percent)"
+if (( current_free < MIN_FREE_PERCENT )); then
+    log "low disk space detected: free=${current_free}%; running deeper safe cleanup"
+    journalctl --vacuum-size=100M >/dev/null || log "warning: deeper journal cleanup failed"
+    find /var/cache/apt/archives -maxdepth 1 -type f -name '*.deb' -delete \
+        || log "warning: package archive cleanup failed"
+    find /var/log -maxdepth 1 -type f \( -name '*.gz' -o -name '*.1' \) -delete \
+        || log "warning: archived log cleanup failed"
+fi
+
+current_free="$(free_percent)"
+if (( current_free < CRITICAL_FREE_PERCENT )); then
+    log "critical disk space remains: free=${current_free}%; reducing journal to 50M"
+    journalctl --vacuum-size=50M >/dev/null || log "warning: critical journal cleanup failed"
+fi
+
+if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+    log "$SERVICE_NAME is not active; restarting"
+    systemctl restart "$SERVICE_NAME"
+fi
+
+final_free="$(free_percent)"
+final_kb="$(available_kb)"
+log "maintenance finished: free=${final_free}% available_kb=${final_kb}"
