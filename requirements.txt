@@ -4,4 +4,4 @@ APScheduler==3.10.4
 aiohttp==3.9.5
 beautifulsoup4==4.12.3
 python-dotenv==1.0.1
-telethon==1.36.0
+telethon==1.45.0
