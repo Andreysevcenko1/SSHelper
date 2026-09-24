@@ -15,17 +15,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-try:
-    from telethon import TelegramClient
-    from telethon.errors import ChatAdminRequiredError, FloodWaitError
-except ModuleNotFoundError as exc:
-    if exc.name == "telethon":
-        raise SystemExit(
-            "Telethon is not installed. Run: pip install -r requirements.txt"
-        ) from exc
-    raise
-
 from app.config import load_config
+
+_SESSION_NAME = "cleanup_deleted_users"
 
 
 def _get_api_id() -> int:
@@ -34,10 +26,32 @@ def _get_api_id() -> int:
 
 
 def _get_api_hash() -> str:
-    return os.getenv("TG_API_HASH", "").strip() or getpass.getpass("App api_hash: ").strip()
+    configured = os.getenv("TG_API_HASH", "").strip()
+    if configured:
+        return configured
+
+    # Telethon stores the authorization key in the .session file. Once that
+    # session has been authorized, api_hash is not used again unless Telegram
+    # requires a new login. Supplying a non-secret placeholder avoids asking
+    # admins for the hash on every routine cleanup run.
+    if Path(f"{_SESSION_NAME}.session").is_file():
+        print("Using saved Telegram authorization session.")
+        return "saved-session"
+
+    return getpass.getpass("App api_hash: ").strip()
 
 
 async def _main() -> None:
+    try:
+        from telethon import TelegramClient
+        from telethon.errors import ChatAdminRequiredError, FloodWaitError
+    except ModuleNotFoundError as exc:
+        if exc.name == "telethon":
+            raise SystemExit(
+                "Telethon is not installed. Run: pip install -r requirements.txt"
+            ) from exc
+        raise
+
     parser = argparse.ArgumentParser(
         description="Remove Telegram Deleted Account users from BROADCAST_CHAT_ID."
     )
@@ -58,7 +72,7 @@ async def _main() -> None:
     if cfg.broadcast_chat_id is None:
         raise RuntimeError("BROADCAST_CHAT_ID is not set in .env")
 
-    client = TelegramClient("cleanup_deleted_users", _get_api_id(), _get_api_hash())
+    client = TelegramClient(_SESSION_NAME, _get_api_id(), _get_api_hash())
     await client.start(bot_token=cfg.telegram_bot_token)
 
     checked = 0
