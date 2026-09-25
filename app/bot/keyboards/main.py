@@ -4,6 +4,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from app.bot.callbacks import LangCB, MenuCB, SubCB
 from app.i18n import get_text
 
+GROUP_URL = "https://t.me/sslvhelper"
+
 
 def main_menu_kb(lang: str = "lv") -> InlineKeyboardMarkup:
     """Main entry-point menu shown after /start — 4 core buttons only."""
@@ -13,6 +15,7 @@ def main_menu_kb(lang: str = "lv") -> InlineKeyboardMarkup:
     b.button(text=get_text("btn_subscription", lang), callback_data=SubCB(action="show"))
     b.button(text=get_text("btn_language", lang), callback_data=MenuCB(action="lang"))
     b.button(text=get_text("btn_help", lang), callback_data=MenuCB(action="help"))
+    b.button(text=get_text("btn_group", lang), url=GROUP_URL)
     b.adjust(1)
     return b.as_markup()
 
