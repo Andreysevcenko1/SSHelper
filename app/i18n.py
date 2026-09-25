@@ -22,17 +22,17 @@ _T: dict[str, dict[str, str]] = {
     "welcome": {
         "lv": (
             "👋 Sveiki! Es esmu <b>SSHelper</b> — bots SS.lv sludinājumu uzraudzībai.\n\n"
-            "📢 Visi jaunākie SS.lv sludinājumi mūsu grupā: https://t.me/sslvhelper\n\n"
+            "📢 Visi jaunākie SS.lv sludinājumi mūsu grupā: https://t.me/ss_lvcom\n\n"
             "Atsūtiet man SS.lv meklēšanas saiti vai izmantojiet pogas zemāk:"
         ),
         "ru": (
             "👋 Привет! Я <b>SSHelper</b> — бот для мониторинга объявлений на SS.lv.\n\n"
-            "📢 Все новые объявления SS.lv в нашей группе: https://t.me/sslvhelper\n\n"
+            "📢 Все новые объявления SS.lv в нашей группе: https://t.me/ss_lvcom\n\n"
             "Отправьте мне ссылку на поиск SS.lv или используйте кнопки ниже:"
         ),
         "en": (
             "👋 Hello! I am <b>SSHelper</b> — a bot for monitoring listings on SS.lv.\n\n"
-            "📢 All new SS.lv listings in our group: https://t.me/sslvhelper\n\n"
+            "📢 All new SS.lv listings in our group: https://t.me/ss_lvcom\n\n"
             "Send me an SS.lv search link or use the buttons below:"
         ),
     },

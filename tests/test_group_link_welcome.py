@@ -4,7 +4,7 @@ from app.i18n import get_text
 
 def test_welcome_contains_group_link_in_all_languages():
     for lang in ("lv", "ru", "en"):
-        assert "https://t.me/sslvhelper" in get_text("welcome", lang)
+        assert "https://t.me/ss_lvcom" in get_text("welcome", lang)
 
 
 def test_main_menu_has_group_url_button():

@@ -4,7 +4,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 from app.bot.callbacks import LangCB, MenuCB, SubCB
 from app.i18n import get_text
 
-GROUP_URL = "https://t.me/sslvhelper"
+GROUP_URL = "https://t.me/ss_lvcom"
 
 
 def main_menu_kb(lang: str = "lv") -> InlineKeyboardMarkup:
