@@ -48,7 +48,8 @@ if (( current_free < CRITICAL_FREE_PERCENT )); then
     journalctl --vacuum-size=50M >/dev/null || log "warning: critical journal cleanup failed"
 fi
 
-if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+if [[ "${SSHELPER_SKIP_RESTART:-0}" != "1" ]] \
+    && ! systemctl is-active --quiet "$SERVICE_NAME"; then
     log "$SERVICE_NAME is not active; restarting"
     systemctl restart "$SERVICE_NAME"
 fi

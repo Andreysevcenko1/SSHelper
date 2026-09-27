@@ -43,6 +43,29 @@ _ADMIN_COMMANDS = _BOT_COMMANDS + [
 logger = logging.getLogger(__name__)
 
 
+async def _prepare_bot(bot: Bot, admin_user_ids: list[int]) -> None:
+    """Validate Telegram access and configure polling without blocking startup."""
+    me = await bot.get_me()
+    logger.info("Telegram bot authenticated: @%s (id=%s)", me.username, me.id)
+
+    # Polling cannot receive updates while a webhook is configured. This is
+    # idempotent and preserves pending updates from users.
+    await bot.delete_webhook(drop_pending_updates=False)
+
+    try:
+        await bot.set_my_commands(_BOT_COMMANDS)
+    except Exception as exc:
+        logger.warning("Could not set public bot commands: %s", exc)
+
+    for admin_id in admin_user_ids:
+        try:
+            await bot.set_my_commands(
+                _ADMIN_COMMANDS, scope=BotCommandScopeChat(chat_id=admin_id)
+            )
+        except Exception as exc:
+            logger.warning("Could not set admin commands for %s: %s", admin_id, exc)
+
+
 def _db_hygiene_job(session_factory: sessionmaker[Session]) -> None:
     """Periodic DB hygiene: prune dead searches and vacuum."""
     session = session_factory()
@@ -67,16 +90,7 @@ async def run() -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
 
-    # Register bot commands in Telegram client menu
-    await bot.set_my_commands(_BOT_COMMANDS)
-    # Admins additionally see the [Admin] commands in their private chat menu.
-    for admin_id in config.admin_user_ids:
-        try:
-            await bot.set_my_commands(
-                _ADMIN_COMMANDS, scope=BotCommandScopeChat(chat_id=admin_id)
-            )
-        except Exception as exc:
-            logger.warning("Could not set admin commands for %s: %s", admin_id, exc)
+    await _prepare_bot(bot, config.admin_user_ids)
 
     dp = Dispatcher()
     dp.include_router(get_main_router())
@@ -135,6 +149,7 @@ async def run() -> None:
     scheduler.start()
 
     try:
+        logger.info("Starting Telegram polling")
         await dp.start_polling(bot, session_factory=session_factory, config=config)
     finally:
         scheduler.shutdown(wait=False)
