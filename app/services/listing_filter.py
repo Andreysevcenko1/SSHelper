@@ -136,9 +136,9 @@ def listing_matches_filters(
         elif key == "price_max":
             numeric_checks.append((key, price, price is None or price <= bound))
         elif key == "year_min":
-            numeric_checks.append((key, year, year is None or year >= bound))
+            numeric_checks.append((key, year, year is not None and year >= bound))
         elif key == "year_max":
-            numeric_checks.append((key, year, year is None or year <= bound))
+            numeric_checks.append((key, year, year is not None and year <= bound))
         elif key == "volume_min":
             numeric_checks.append((key, volume, volume is None or volume >= bound))
         elif key == "volume_max":

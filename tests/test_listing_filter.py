@@ -189,3 +189,11 @@ class TestFlatsDealType:
         listing = _listing(deal_type="unknown")
         ok, _ = listing_matches_filters(listing, {"sid": "sell"}, "flats")
         assert ok is True
+
+
+def test_unknown_year_fails_year_bound_for_cars():
+    from app.services.ss_parser import Listing
+
+    listing = Listing(external_id="x", title="Audi A6", url="u", price="2 595 €")
+    ok, reason = listing_matches_filters(listing, {"topt[18][min]": "2022"}, "cars")
+    assert ok is False and reason.startswith("year_min")
