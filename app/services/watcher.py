@@ -289,6 +289,11 @@ class WatcherService:
                     search.id, listing.external_id, fail_reason,
                 )
             if matches:
+                logger.info(
+                    "Watcher: DM delivery search_id=%d owner=%s listing=%s title=%r year=%s price=%s url=%s",
+                    search.id, search.user_id, listing.external_id, listing.title,
+                    getattr(listing, "car_year", None), listing.price, listing.url,
+                )
                 try:
                     await self._send_notification(
                         chat_id=search.user_id,
