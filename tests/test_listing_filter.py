@@ -197,3 +197,14 @@ def test_unknown_year_fails_year_bound_for_cars():
     listing = Listing(external_id="x", title="Audi A6", url="u", price="2 595 €")
     ok, reason = listing_matches_filters(listing, {"topt[18][min]": "2022"}, "cars")
     assert ok is False and reason.startswith("year_min")
+
+
+def test_detail_url_forced_to_latvian_labels_page():
+    from app.services.ss_parser import to_lv_detail_url
+
+    assert to_lv_detail_url("https://www.ss.lv/msg/ru/transport/cars/audi/a6/x.html") == (
+        "https://www.ss.lv/msg/lv/transport/cars/audi/a6/x.html"
+    )
+    assert to_lv_detail_url("https://www.ss.com/msg/en/real-estate/flats/riga/a.html").endswith(
+        "/msg/lv/real-estate/flats/riga/a.html"
+    )

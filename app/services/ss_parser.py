@@ -281,6 +281,11 @@ _DETAIL_LABEL_MAP: dict[str, str] = {
 }
 
 
+def to_lv_detail_url(url: str) -> str:
+    """Detail parsing relies on Latvian labels, so always fetch the /lv/ page."""
+    return re.sub(r"(ss\.(?:lv|com)/msg/)(?:ru|en)/", r"\1lv/", url, count=1)
+
+
 def _clean_street_value(value: str) -> str:
     cleaned = re.sub(r"\[\s*karte\s*\]", "", value, flags=re.IGNORECASE)
     return re.sub(r"\s+", " ", cleaned).strip()
@@ -816,7 +821,7 @@ class SSParser:
         is_cars = profile == "cars"
         is_detail_profile = is_flats or is_cars
         try:
-            detail_data, fetch_meta = await self._fetch_detail_page_data(listing.url)
+            detail_data, fetch_meta = await self._fetch_detail_page_data(to_lv_detail_url(listing.url))
         except DetailFetchError as exc:
             if not is_detail_profile:
                 logger.exception(
