@@ -289,6 +289,13 @@ class BroadcastRepository:
             self.session.rollback()
             return False
 
+    def release(self, external_id: str) -> None:
+        """Drop a claim so a failed delivery can be retried later."""
+        row = self.session.get(BroadcastSent, external_id)
+        if row is not None:
+            self.session.delete(row)
+            self.session.commit()
+
     def already_sent(self, external_id: str) -> bool:
         """Return True if *external_id* is already in broadcast_sent."""
         return self.session.get(BroadcastSent, external_id) is not None

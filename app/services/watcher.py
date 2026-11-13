@@ -323,17 +323,17 @@ class WatcherService:
         session = self.session_factory()
         try:
             bc_repo = BroadcastRepository(session)
-            if bc_repo.already_sent(listing.external_id):
-                logger.debug(
-                    "Broadcast dedupe: skipping %s (already sent)", listing.external_id
-                )
-                return
-
             thread_id = _detect_topic(search_url, listing, self.config)
             if thread_id is None:
                 logger.info(
                     "Broadcast: listing %s not routed to any topic, skipping",
                     listing.external_id,
+                )
+                return
+
+            if not bc_repo.mark_sent(listing.external_id):
+                logger.debug(
+                    "Broadcast dedupe: skipping %s (already sent)", listing.external_id
                 )
                 return
 
@@ -349,12 +349,7 @@ class WatcherService:
                     listing.external_id,
                     thread_id,
                 )
-                return
-
-            # Only mark as sent after a successful delivery
-            sent = bc_repo.mark_sent(listing.external_id)
-            if not sent:
-                logger.debug("Broadcast dedupe: race-condition skip for %s", listing.external_id)
+                bc_repo.release(listing.external_id)
         finally:
             session.close()
 

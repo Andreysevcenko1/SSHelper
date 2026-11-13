@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import Config
 from app.db.models import GroupSearch
-from app.db.repo import GroupSearchRepository
+from app.db.repo import BroadcastRepository, GroupSearchRepository
 from app.services.fetch_coordinator import FetchCoordinator
 from app.services.facebook_publisher import publish_to_facebook_page
 from app.services.formatter import format_listing_message, select_image_url
@@ -207,6 +207,12 @@ class GroupWatcherService:
                     listing.external_id, listing.title,
                 )
                 continue
+            if not self._claim_listing(listing.external_id):
+                logger.info(
+                    "GroupWatcher: listing %s already posted to the group — skipping duplicate",
+                    listing.external_id,
+                )
+                continue
             try:
                 await self._send_group_notification(
                     chat_id=self.config.broadcast_chat_id,  # type: ignore[arg-type]
@@ -215,11 +221,33 @@ class GroupWatcherService:
                     route_key=route_key,
                 )
             except Exception:
+                self._release_listing(listing.external_id)
                 logger.exception(
                     "GroupWatcher: failed to send listing %s to thread %s",
                     listing.external_id,
                     thread_id,
                 )
+
+    def _claim_listing(self, external_id: str) -> bool:
+        """Atomically claim *external_id* so a listing is posted to the group once."""
+        if not external_id:
+            return True
+        session = self.session_factory()
+        try:
+            return BroadcastRepository(session).mark_sent(external_id)
+        finally:
+            session.close()
+
+    def _release_listing(self, external_id: str) -> None:
+        if not external_id:
+            return
+        session = self.session_factory()
+        try:
+            BroadcastRepository(session).release(external_id)
+        except Exception:
+            logger.exception("GroupWatcher: failed to release claim for %s", external_id)
+        finally:
+            session.close()
 
     async def _send_group_notification(
         self,
