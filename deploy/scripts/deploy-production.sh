@@ -87,8 +87,22 @@ if ! sudo systemctl is-active --quiet "$SERVICE_NAME"; then
     fail "$SERVICE_NAME exited after startup"
 fi
 
-if ! sudo journalctl -u "$SERVICE_NAME" --since "$service_started_at" --no-pager \
-    | grep -Fq "Starting Telegram polling"; then
+polling_ready=false
+for _ in {1..30}; do
+    if ! sudo systemctl is-active --quiet "$SERVICE_NAME"; then
+        break
+    fi
+    # Consume the journal fully: grep -q can trigger SIGPIPE under pipefail.
+    if sudo journalctl -u "$SERVICE_NAME" --since "$service_started_at" --no-pager \
+        | grep -F "Starting Telegram polling" >/dev/null; then
+        polling_ready=true
+        break
+    fi
+    sleep 2
+done
+
+if [[ "$polling_ready" != true ]]; then
+    sudo systemctl --no-pager -l status "$SERVICE_NAME" || true
     sudo journalctl -u "$SERVICE_NAME" -n 100 --no-pager -l || true
     fail "Telegram polling readiness message was not observed"
 fi
